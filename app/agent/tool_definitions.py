@@ -1,0 +1,198 @@
+#Following JSON Schema descriptions help the model(LLM Provider) 
+#To understand when each tool should be used.
+
+
+from typing import get_args
+
+from app.schemas.tools import PlaceCategory
+
+# Available categories are taken from the existing Pydantic schema.
+PLACE_CATEGORIES = list(get_args(PlaceCategory))
+
+
+TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "name": "get_weather",
+        "description": (
+            "Retrieve a daily weather forecast for a city. "
+            "Use this when the user asks about weather or upcoming "
+            "weather conditions at a destination."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": "City and country, e.g. Bangkok, Thailand.",
+                },
+                "forecast_days": {
+                    "type": "integer",
+                    "description": "Number of forecast days. Use 5 by default; allowed range is 1 to 7.",
+                },
+            },
+            "required": ["city", "forecast_days"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "convert_currency",
+        "description": (
+            "Convert an amount between two currencies using the latest "
+            "available reference exchange rate. Use ISO 4217 currency "
+            "codes, such as USD, EUR, BDT, or THB."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number",
+                    "description": "Amount to convert.",
+                },
+                "base_currency": {
+                    "type": "string",
+                    "description": "Three-letter source currency code.",
+                },
+                "target_currency": {
+                    "type": "string",
+                    "description": "Three-letter destination currency code.",
+                },
+            },
+            "required": [
+                "amount",
+                "base_currency",
+                "target_currency",
+            ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "search_destination",
+        "description": (
+            "Search for a destination, city, landmark, or geographic "
+            "location and retrieve matching location details and coordinates. "
+            "Use this when the user wants to identify or locate a destination."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Destination or location search query.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum matching locations. Use 5 by default; allowed range is 1 to 10.",
+                },
+            },
+            "required": ["query", "limit"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "search_nearby_places",
+        "description": (
+            "Find nearby attractions, restaurants, museums, hotels, "
+            "and other supported place categories around a location. "
+            "Provide a specific location including its country. "
+            "The function resolves the location internally before searching "
+            "nearby places. Use this when the user asks what places or "
+            "attractions are near a destination."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {
+                    "type": "string",
+                    "description": "Location with city and country, e.g. Kyoto, Japan.",
+                },
+                "category": {
+                    "type": "string",
+                    "enum": PLACE_CATEGORIES,
+                    "description": "Type of nearby places to search for.",
+                },
+                "radius": {
+                    "type": "integer",
+                    "description": "Search radius in meters. Use 5000 by default; allowed range is 100 to 10000.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of places. Use 20 by default; allowed range is 1 to 50.",
+                },
+            },
+            "required": [
+                "location",
+                "category",
+                "radius",
+                "limit",
+            ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "estimate_travel_cost",
+        "description": (
+            "Calculate a deterministic travel budget from cost assumptions "
+            "provided by the user. Accommodation cost is the total group "
+            "cost per night. Food, transport, and activity costs are per "
+            "person per day. Do not invent market prices or cost assumptions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer",
+                    "description": "Number of travel days.",
+                },
+                "nights": {
+                    "type": "integer",
+                    "description": "Number of accommodation nights.",
+                },
+                "travelers": {
+                    "type": "integer",
+                    "description": "Number of travelers.",
+                },
+                "accommodation_per_night": {
+                    "type": "number",
+                    "description": "Total accommodation cost for the group per night.",
+                },
+                "food_per_person_per_day": {
+                    "type": "number",
+                    "description": "Food cost per traveler per day.",
+                },
+                "transport_per_person_per_day": {
+                    "type": "number",
+                    "description": "Transport cost per traveler per day.",
+                },
+                "activities_per_person_per_day": {
+                    "type": "number",
+                    "description": "Activities cost per traveler per day.",
+                },
+                "currency": {
+                    "type": "string",
+                    "description": "Three-letter currency code. Use USD by default.",
+                },
+            },
+            "required": [
+                "days",
+                "nights",
+                "travelers",
+                "accommodation_per_night",
+                "food_per_person_per_day",
+                "transport_per_person_per_day",
+                "activities_per_person_per_day",
+                "currency",
+            ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+]
