@@ -6,12 +6,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
-from app.api.routes import chat
+from app.api.routes import chat, tools
 from app.core.limiter import limiter
 
 logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="Delicious Kitchen Chatbot", swagger_ui_parameters= {"defaultModelsExpandDepth": -1})
+app = FastAPI(title="Goo - AI Travel Research Assistant", swagger_ui_parameters= {"defaultModelsExpandDepth": -1})
 
 
 #Register the limiter and return a friendly 429 message.
@@ -25,6 +25,7 @@ def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     )
 
 app.include_router(chat.router)
+app.include_router(tools.router)
 
 
 # GET and HEAD
