@@ -9,7 +9,8 @@ class Settings(BaseSettings):
     model_name : str
 
     system_prompt_file : str = "prompts/delicious_kitchen.md"
-    max_history_messages : int
+    history_first_exchanges: int = 4
+    history_recent_exchanges: int = 6
     session_ttl_seconds : int
 
     model_config = SettingsConfigDict(env_file=".env")

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import requests
 
@@ -19,11 +20,23 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-    def complete(self, messages: list[dict]):
+    def complete(
+            self, 
+            input_items: list[dict[str,Any]],
+            *,
+            tools: list[dict[str, Any]] | None = None,
+            tool_choice: str | dict[str, Any] | None = None,
+            parallel_tool_calls: bool = False,
+            ):
         payload = {
             "model" : settings.model_name,
-            "input" : messages,
+            "input" : input_items,
         }
+
+        if tools is not None:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice or "auto"
+            payload["parallel_tool_calls"] = parallel_tool_calls
 
         try:
             response = requests.post(self.url, headers=self.headers, json=payload, timeout=30)
@@ -33,4 +46,8 @@ class LLMClient:
         except requests.RequestException as exc:
             logger.exception("")
             raise LLMClientError(str(exc)) from exc
+
+        except ValueError as exc:
+            logger.exception("LLM returned an invalid JSON response")
+            raise LLMClientError( "LLM returned an invalid response.") from exc
             
