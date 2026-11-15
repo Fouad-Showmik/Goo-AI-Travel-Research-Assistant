@@ -9,8 +9,92 @@ from app.schemas.tools import PlaceCategory
 # Available categories are taken from the existing Pydantic schema.
 PLACE_CATEGORIES = list(get_args(PlaceCategory))
 
+UPDATE_TRIP_REQUIREMENTS_TOOL = {
+    "type": "function",
+    "name": "update_trip_requirements",
+    "description": (
+        "Save or update travel requirements explicitly provided by "
+        "the user during the conversation. Call this when the user "
+        "provides or corrects trip details. Use null for fields that "
+        "are unknown or not being updated. Null values will be ignored. "
+        "Use an empty interests array only when the user explicitly "
+        "wants to clear previously saved interests."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "origin": {
+                "type": ["string", "null"],
+                "description": "Starting city, region, or country.",
+            },
+            "destination": {
+                "type": ["string", "null"],
+                "description": "Destination city, region, or entire country.",
+            },
+            "travelers": {
+                "type": ["integer", "null"],
+                "description": "Number of travelers.",
+            },
+            "duration_days": {
+                "type": ["integer", "null"],
+                "description": "Trip duration in days.",
+            },
+            "budget_amount": {
+                "type": ["number", "null"],
+                "description": "Total travel budget amount.",
+            },
+            "budget_currency": {
+                "type": ["string", "null"],
+                "description": "Three-letter ISO currency code, such as BDT, USD, or THB.",
+            },
+            "budget_includes_flights": {
+                "type": ["boolean", "null"],
+                "description": "Whether the stated budget includes flight costs.",
+            },
+            "travel_date": {
+                "type": ["string", "null"],
+                "description": "Travel start date in YYYY-MM-DD format.",
+            },
+            "travel_month": {
+                "type": ["string", "null"],
+                "description": "Intended travel month or month and year.",
+            },
+            "interests": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+                "description": "Explicitly stated travel interests.",
+            },
+            "accommodation_preference": {
+                "type": ["string", "null"],
+                "enum": [
+                    "budget",
+                    "moderate",
+                    "comfortable",
+                    None,
+                ],
+                "description": "Preferred accommodation comfort level.",
+            },
+        },
+        "required": [
+            "origin",
+            "destination",
+            "travelers",
+            "duration_days",
+            "budget_amount",
+            "budget_currency",
+            "budget_includes_flights",
+            "travel_date",
+            "travel_month",
+            "interests",
+            "accommodation_preference",
+        ],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
 
 TOOL_DEFINITIONS = [
+    UPDATE_TRIP_REQUIREMENTS_TOOL,
     {
         "type": "function",
         "name": "get_weather",

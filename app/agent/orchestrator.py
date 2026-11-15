@@ -22,6 +22,7 @@ class AgentOrchestrator:
     def run(
         self,
         input_items: list[dict[str, Any]],
+        tool_context: dict[str, Any] | None = None,
     ):
         conversation_input = list(input_items)
         total_tokens = 0
@@ -89,6 +90,7 @@ class AgentOrchestrator:
                         raw_arguments,
                         call_id,
                         tool_calls_executed,
+                        tool_context,
                     )
 
                 # Every function call must receive a matching output,
@@ -131,6 +133,7 @@ class AgentOrchestrator:
         raw_arguments: Any,
         call_id: str,
         call_number: int,
+        tool_context: dict[str, Any] | None = None,
     ) -> dict:
         """Execute one registered tool and log its execution."""
 
@@ -155,7 +158,7 @@ class AgentOrchestrator:
                 raise TypeError("Tool arguments must be a JSON object.")
 
             # Validate and execute through the tool registry.
-            result = execute_tool(tool_name, arguments)
+            result = execute_tool(tool_name, arguments, context=tool_context)
 
             if not isinstance(result, dict):
                 raise TypeError("Tool must return a dictionary.")

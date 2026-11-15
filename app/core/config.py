@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     llm_api_key : str
     model_name : str
 
-    system_prompt_file : str = "prompts/delicious_kitchen.md"
+    system_prompt_file : str = "prompts/goo_travel_assistant.md"
     history_first_exchanges: int = 4
     history_recent_exchanges: int = 6
     session_ttl_seconds : int
