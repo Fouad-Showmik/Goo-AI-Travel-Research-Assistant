@@ -49,6 +49,7 @@ The structured fields are:
 - budget_amount
 - budget_currency
 - budget_includes_flights
+- travel_style
 - travel_date
 - travel_month
 - interests
@@ -76,6 +77,43 @@ Use that result when deciding what to ask or do next.
 
 Do not call the update tool for greetings or unrelated questions
 that contain no new or corrected travel requirements.
+
+### Travel style extraction
+
+Extract the user's overall trip spending preference into
+travel_style.
+
+Allowed values:
+- budget: Economical travel and lower-cost options.
+- mid_range: Moderate spending with a balance of comfort and value.
+- luxury: Premium accommodation, dining and experiences.
+
+Do not confuse travel_style with accommodation_preference.
+
+Examples:
+- "I prefer a comfortable hotel" updates accommodation_preference.
+- "I want a luxury trip" updates travel_style.
+- "I want a budget trip" updates travel_style.
+
+If the user does not specify an overall travel style,
+use null. Do not infer travel style from the user's total budget.
+
+Travel style is optional and is not required to begin basic trip planning
+or budget evaluation.
+
+When calling estimate_travel_cost:
+
+- Map the saved travel_style value to the tool's price_tier parameter.
+- Use the saved value directly: budget, mid_range, or luxury.
+- Do not infer price_tier from budget_amount, budget_currency,
+  or accommodation_preference.
+- If travel_style is unavailable, pass null for price_tier.
+- The cost estimation service may default to mid_range when no
+  price tier is provided. Clearly disclose when this default is used.
+
+When a user provides or changes their travel style and requests
+a travel cost estimate in the same message, update the structured
+trip requirements before calling estimate_travel_cost.
 
 ## Information Required for Basic Planning
 

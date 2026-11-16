@@ -74,6 +74,21 @@ UPDATE_TRIP_REQUIREMENTS_TOOL = {
                 ],
                 "description": "Preferred accommodation comfort level.",
             },
+            "travel_style": {
+                "type": ["string", "null"],
+                "enum": [
+                    "budget",
+                    "mid_range",
+                    "luxury",
+                    None,
+                ],
+                "description": (
+                    "Overall trip spending preference. "
+                    "Use budget for economical travel, mid_range for "
+                    "moderate spending, and luxury for premium travel. "
+                    "Do not confuse this with accommodation preference."
+                ),
+            },
         },
         "required": [
             "origin",
@@ -87,6 +102,95 @@ UPDATE_TRIP_REQUIREMENTS_TOOL = {
             "travel_month",
             "interests",
             "accommodation_preference",
+            "travel_style",
+        ],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+ESTIMATE_TRAVEL_COST_TOOL = {
+    "type": "function",
+    "name": "estimate_travel_cost",
+    "description": (
+        "Estimate trip costs using the destination cost catalog. "
+        "Provide the destination, trip duration, and number of travelers. "
+        "Use the appropriate price tier: budget, mid_range, or luxury. "
+        "If the user has not specified a travel style, use null. "
+        "A saved travel style may be applied by the backend. "
+        "Provide the country when available to help identify the destination. "
+        "Use the supplied budget information for budget comparison. "
+        "Never invent market prices or provide fabricated cost assumptions. "
+        "The catalog may return city-level data or fall back to country-level data."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "destination": {
+                "type": "string",
+                "description": (
+                    "Destination city, region, or country, "
+                    "e.g. Bangkok or Thailand."
+                ),
+            },
+            "days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 60,
+                "description": "Total trip duration in days.",
+            },
+            "travelers": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "description": "Number of travelers.",
+            },
+            "price_tier": {
+                "type": ["string", "null"],
+                "enum": ["budget", "mid_range", "luxury", None],
+                "description": (
+                    "Overall travel spending tier. "
+                    "Use budget, mid_range, or luxury. "
+                    "Use null when not specified."
+                ),
+            },
+            "country": {
+                "type": ["string", "null"],
+                "description": (
+                    "Country containing the destination, "
+                    "when known or needed for disambiguation."
+                ),
+            },
+            "budget_amount": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "description": "User's total trip budget, if provided.",
+            },
+            "budget_currency": {
+                "type": ["string", "null"],
+                "minLength": 3,
+                "maxLength": 3,
+                "description": (
+                    "Three-letter ISO currency code, "
+                    "such as BDT, USD, or THB."
+                ),
+            },
+            "budget_includes_flights": {
+                "type": "boolean",
+                "description": (
+                    "Whether the user's stated budget includes flights."
+                ),
+            },
+        },
+        "required": [
+            "destination",
+            "days",
+            "travelers",
+            "price_tier",
+            "country",
+            "budget_amount",
+            "budget_currency",
+            "budget_includes_flights",
         ],
         "additionalProperties": False,
     },
@@ -259,63 +363,5 @@ TOOL_DEFINITIONS = [
         },
         "strict": True,
     },
-    {
-        "type": "function",
-        "name": "estimate_travel_cost",
-        "description": (
-            "Calculate a deterministic travel budget from cost assumptions "
-            "provided by the user. Accommodation cost is the total group "
-            "cost per night. Food, transport, and activity costs are per "
-            "person per day. Do not invent market prices or cost assumptions."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "days": {
-                    "type": "integer",
-                    "description": "Number of travel days.",
-                },
-                "nights": {
-                    "type": "integer",
-                    "description": "Number of accommodation nights.",
-                },
-                "travelers": {
-                    "type": "integer",
-                    "description": "Number of travelers.",
-                },
-                "accommodation_per_night": {
-                    "type": "number",
-                    "description": "Total accommodation cost for the group per night.",
-                },
-                "food_per_person_per_day": {
-                    "type": "number",
-                    "description": "Food cost per traveler per day.",
-                },
-                "transport_per_person_per_day": {
-                    "type": "number",
-                    "description": "Transport cost per traveler per day.",
-                },
-                "activities_per_person_per_day": {
-                    "type": "number",
-                    "description": "Activities cost per traveler per day.",
-                },
-                "currency": {
-                    "type": "string",
-                    "description": "Three-letter currency code. Use USD by default.",
-                },
-            },
-            "required": [
-                "days",
-                "nights",
-                "travelers",
-                "accommodation_per_night",
-                "food_per_person_per_day",
-                "transport_per_person_per_day",
-                "activities_per_person_per_day",
-                "currency",
-            ],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
+    ESTIMATE_TRAVEL_COST_TOOL,
 ]

@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
+TravelStyle = Literal["budget", "mid_range", "luxury"]
 #Structured travel requirements collected from a user.
 class TripRequirements(BaseModel):
     model_config = ConfigDict(
@@ -54,6 +54,8 @@ class TripRequirements(BaseModel):
 
     budget_includes_flights: bool | None = None
 
+    travel_style: TravelStyle | None = None
+
     #Travel timing
     travel_date: date | None = None
 
@@ -74,6 +76,7 @@ class TripRequirements(BaseModel):
         "moderate",
         "comfortable",
     ] | None = None
+
 
     @field_validator(
         "origin",

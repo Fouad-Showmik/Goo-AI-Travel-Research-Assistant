@@ -59,13 +59,32 @@ class NearbyPlacesRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=50)
 
 class TravelCostRequest(BaseModel):
+    destination: str = Field(min_length=2, max_length=200)
+
     days: int = Field(ge=1, le=60)
-    nights: int = Field(ge=0, le=60)
     travelers: int = Field(ge=1, le=20)
 
-    accommodation_per_night: float = Field(ge=0)
-    food_per_person_per_day: float = Field(ge=0)
-    transport_per_person_per_day: float = Field(ge=0)
-    activities_per_person_per_day: float = Field(ge=0)
+    price_tier: Literal[
+        "budget",
+        "mid_range",
+        "luxury",
+    ] | None = None
 
-    currency: str = Field(default="USD", min_length=3, max_length=3)
+    country: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=100,
+    )
+
+    budget_amount: float | None = Field(
+        default=None,
+        ge=0,
+    )
+
+    budget_currency: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+    )
+
+    budget_includes_flights: bool = False

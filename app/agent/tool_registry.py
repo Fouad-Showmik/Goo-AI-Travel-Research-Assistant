@@ -78,6 +78,25 @@ def execute_tool(name: str, arguments: dict, context: dict[str, Any] | None = No
             if value is not None
         }
 
+    # Use the saved travel style as the default cost estimation tier.
+    if name == "estimate_travel_cost" and context:
+        session_id = context.get("session_id")
+        trip_context_service = context.get("trip_context_service")
+
+        if session_id and trip_context_service is not None:
+            saved_trip = trip_context_service.get(session_id)
+
+            # Preserve an explicitly supplied price tier.
+            # Otherwise, use the saved travel style.
+            if (
+                arguments.get("price_tier") is None
+                and saved_trip.travel_style is not None
+            ):
+                arguments = {
+                    **arguments,
+                    "price_tier": saved_trip.travel_style,
+                }
+
     # Validate arguments before executing the Python function.
 
     validated_arguments = input_schema.model_validate(arguments)

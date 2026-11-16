@@ -1,46 +1,36 @@
-# performs deterministic calculations
+from __future__ import annotations
 
+from app.clients.currency_client import CurrencyClient
+from app.services.destination_cost_catalog import DestinationCostCatalog
+from app.services.destination_cost_estimator import estimate_catalog_trip_cost
+
+# Shared catalog and currency client instances.
+destination_cost_catalog = DestinationCostCatalog()
+currency_client = CurrencyClient()
+
+#Estimate trip costs using the destination cost catalog.
 
 def estimate_travel_cost(
+    destination: str,
     days: int,
-    nights: int,
     travelers: int,
-    accommodation_per_night: float,
-    food_per_person_per_day: float,
-    transport_per_person_per_day: float,
-    activities_per_person_per_day: float,
-    currency: str = "USD",
+    price_tier: str | None = None,
+    country: str | None = None,
+    budget_amount: float | None = None,
+    budget_currency: str | None = None,
+    budget_includes_flights: bool = False,
 ):
-    accommodation = nights * accommodation_per_night
 
-    food = days * travelers * food_per_person_per_day
 
-    transport = days * travelers * transport_per_person_per_day
-
-    activities = days * travelers * activities_per_person_per_day
-
-    total = accommodation + food + transport + activities
-
-    return {
-        "currency": currency.upper(),
-        "travelers": travelers,
-        "days": days,
-        "nights": nights,
-        "breakdown": {
-            "accommodation": round(accommodation, 2),
-            "food": round(food, 2),
-            "transport": round(transport, 2),
-            "activities": round(activities, 2),
-        },
-        "total_estimated_cost": round(total, 2),
-        "assumptions": {
-            "accommodation_per_night": accommodation_per_night,
-            "food_per_person_per_day": food_per_person_per_day,
-            "transport_per_person_per_day": transport_per_person_per_day,
-            "activities_per_person_per_day": activities_per_person_per_day,
-        },
-        "note": (
-            "This calculation uses supplied cost assumptions. "
-            "It does not verify actual market prices."
-        ),
-    }
+    return estimate_catalog_trip_cost(
+        catalog=destination_cost_catalog,
+        destination=destination,
+        country=country,
+        price_tier=price_tier,
+        travelers=travelers,
+        duration_days=days,
+        budget_amount=budget_amount,
+        budget_currency=budget_currency,
+        budget_includes_flights=budget_includes_flights,
+        currency_client=currency_client,
+    )
