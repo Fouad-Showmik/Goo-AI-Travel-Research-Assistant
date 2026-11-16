@@ -9,6 +9,7 @@ PlaceCategory = Literal[
     "cafe",
     "hotel",
     "attraction",
+    "all_attractions",
     "museum",
     "viewpoint",
     "historical_site",

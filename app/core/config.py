@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     history_recent_exchanges: int = 6
     session_ttl_seconds : int
 
+    geoapify_api_key: str
+
     model_config = SettingsConfigDict(env_file=".env")
 
     @property

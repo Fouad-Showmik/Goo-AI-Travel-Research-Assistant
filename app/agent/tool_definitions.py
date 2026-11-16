@@ -182,12 +182,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "name": "search_nearby_places",
         "description": (
-            "Find nearby attractions, restaurants, museums, hotels, "
-            "and other supported place categories around a location. "
-            "Provide a specific location including its country. "
-            "The function resolves the location internally before searching "
-            "nearby places. Use this when the user asks what places or "
-            "attractions are near a destination."
+            "Search for attractions, restaurants, museums, hotels, "
+            "and other supported places. City and region destinations "
+            "use radius-based OpenStreetMap Overpass searches. Entire "
+            "countries use Geoapify Places API bounding-box searches "
+            "with results filtered against the actual country boundary. "
+            "Country-level results are limited and are not exhaustive. "
+            "Country-wide searches support sightseeing, not "
+            "restaurants, cafes, or hotels."
         ),
         "parameters": {
             "type": "object",
@@ -199,7 +201,7 @@ TOOL_DEFINITIONS = [
                 "category": {
                     "type": "string",
                     "enum": PLACE_CATEGORIES,
-                    "description": "Type of nearby places to search for.",
+                    "description": "Type of places to search for. Use all_attractions for a broad sightseeing overview.",
                 },
                 "radius": {
                     "type": "integer",
