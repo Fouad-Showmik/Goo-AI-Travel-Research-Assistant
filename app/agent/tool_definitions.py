@@ -122,6 +122,43 @@ TOOL_DEFINITIONS = [
     },
     {
         "type": "function",
+        "name": "get_seasonal_climate",
+        "description": (
+            "Retrieve historical seasonal weather information for a "
+            "destination and travel month. Use this when the user asks "
+            "about typical weather, temperature, rainfall, or seasonal "
+            "conditions for a future trip month or a period outside the "
+            "short-term forecast horizon. The result summarizes the "
+            "previous five complete calendar years. It is historical "
+            "information, not a future weather forecast or an official "
+            "30-year climate normal. Provide a specific city or region, "
+            "not an entire country."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {
+                    "type": "string",
+                    "description": (
+                        "Specific destination city or region with its country, "
+                        "e.g. Bangkok, Thailand."
+                    ),
+                },
+                "travel_month": {
+                    "type": "string",
+                    "description": ("Travel month, e.g. July, July 2027, or 2027-07."),
+                },
+            },
+            "required": [
+                "city",
+                "travel_month",
+            ],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
         "name": "convert_currency",
         "description": (
             "Convert an amount between two currencies using the latest "

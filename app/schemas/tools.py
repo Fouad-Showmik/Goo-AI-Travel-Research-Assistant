@@ -29,6 +29,20 @@ class WeatherRequest(BaseModel):
     city: str = Field(min_length=2, max_length=100)
     forecast_days: int = Field(default=5, ge=1, le=7)
 
+class SeasonalClimateRequest(BaseModel):
+    city: str = Field(
+        min_length=2,
+        max_length=100,
+    )
+
+    travel_month: str = Field(
+        min_length=3,
+        max_length=30,
+        description=(
+            "Travel month, e.g. July, July 2027, or 2027-07."
+        ),
+    )
+
 class CurrencyRequest(BaseModel):
     amount: float = Field(gt=0, le=1_000_000_000)
     base_currency: str = Field(min_length=3, max_length=3)

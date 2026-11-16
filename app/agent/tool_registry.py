@@ -2,9 +2,6 @@
 #when the model selects a tool.
 #The Model can only execute the explicitly registered functions in tool_registry.
 
-
-
-
 from collections.abc import Callable
 from typing import Any
 
@@ -14,6 +11,7 @@ from app.schemas.tools import (
     CurrencyRequest,
     DestinationSearchRequest,
     NearbyPlacesRequest,
+    SeasonalClimateRequest,
     TravelCostRequest,
     WeatherRequest,
 )
@@ -23,7 +21,7 @@ from app.tools.destination import search_destination
 from app.tools.nearby_places import search_nearby_places
 from app.tools.travel_cost import estimate_travel_cost
 from app.tools.trip import update_trip_requirements
-from app.tools.weather import get_weather
+from app.tools.weather import get_seasonal_climate, get_weather
 
 # Maps each exposed tool name to its Python function and input schema.
 
@@ -38,6 +36,10 @@ TOOL_REGISTRY: dict[
     "get_weather": (
         get_weather,
         WeatherRequest,
+    ),
+    "get_seasonal_climate": (
+        get_seasonal_climate,
+        SeasonalClimateRequest,
     ),
     "convert_currency": (
         convert_currency,
