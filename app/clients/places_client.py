@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from copy import deepcopy
 from typing import Any, ClassVar
 
 import requests
@@ -78,6 +79,16 @@ class PlacesClient:
     NOMINATIM_REQUEST_INTERVAL: ClassVar[float] = 1.1
     NOMINATIM_CACHE_TTL: ClassVar[int] = 86400  # 24 hours
     NOMINATIM_MAX_CACHE_ITEMS: ClassVar[int] = 256
+
+    # Nearby-place result caching.
+    NEARBY_CACHE_TTL: ClassVar[int] = 30 * 24 * 60 * 60
+    NEARBY_CACHE_MAX_ITEMS: ClassVar[int] = 512
+
+    _NEARBY_CACHE_LOCK: ClassVar[threading.Lock] = threading.Lock()
+
+    _NEARBY_CACHE: ClassVar[
+        dict[tuple[Any, ...], tuple[float, dict[str, Any]]]
+    ] = {}
 
     # Supported nearby-place categories
     CATEGORIES: ClassVar[dict[str, list[str]]] = {
@@ -174,6 +185,76 @@ class PlacesClient:
     "artwork",
     "religious_site",
     })
+
+    
+    @classmethod
+    def _get_nearby_cache(
+        cls,
+        key: tuple[Any, ...],
+    ) -> dict[str, Any] | None:
+        """Return an unexpired cached nearby-place result."""
+
+        with cls._NEARBY_CACHE_LOCK:
+            cached = cls._NEARBY_CACHE.get(key)
+
+            if cached is None:
+                return None
+
+            expires_at, result = cached
+
+            if time.monotonic() >= expires_at:
+                cls._NEARBY_CACHE.pop(key, None)
+                return None
+
+            # Prevent callers from modifying the cached object.
+            return deepcopy(result)
+
+
+    @classmethod
+    def _save_nearby_cache(
+        cls,
+        key: tuple[Any, ...],
+        result: dict[str, Any],
+    ) -> None:
+        """Cache successful, non-empty nearby-place results."""
+
+        if not isinstance(result, dict):
+            return
+
+        if not result.get("result_count", 0):
+            return
+
+        now = time.monotonic()
+
+        with cls._NEARBY_CACHE_LOCK:
+
+            # Remove expired entries.
+            expired_keys = [
+                old_key
+                for old_key, (expires_at, _) in cls._NEARBY_CACHE.items()
+                if now >= expires_at
+            ]
+
+            for old_key in expired_keys:
+                cls._NEARBY_CACHE.pop(old_key, None)
+
+            # Keep cache memory bounded.
+            if (
+                key not in cls._NEARBY_CACHE
+                and len(cls._NEARBY_CACHE) >= cls.NEARBY_CACHE_MAX_ITEMS
+            ):
+                oldest_key = min(
+                    cls._NEARBY_CACHE,
+                    key=lambda item: cls._NEARBY_CACHE[item][0],
+                )
+
+                cls._NEARBY_CACHE.pop(oldest_key, None)
+
+            cls._NEARBY_CACHE[key] = (
+                now + cls.NEARBY_CACHE_TTL,
+                deepcopy(result),
+            )
+
 
     #Fetch Nominatim data with rate limiting and caching.
 
@@ -808,16 +889,43 @@ class PlacesClient:
                 "Geoapify returned an invalid places response."
             ) from exc
 
+    #Search nearby places, reusing cached results when available.
     def search_nearby_with_fallback(
-    self,
-    latitude: float,
-    longitude: float,
-    category: str,
-    radius: int = 5000,
-    limit: int = 20,
-):
+        self,
+        latitude: float,
+        longitude: float,
+        category: str,
+        radius: int = 5000,
+        limit: int = 20,
+    ):
+        # Build a key from all parameters that affect the search.
+        cache_key = (
+            "radius",
+            round(float(latitude), 5),
+            round(float(longitude), 5),
+            category,
+            radius,
+            limit,
+        )
+
+        # 1. Check the cache before contacting external providers.
+        cached_result = self._get_nearby_cache(cache_key)
+
+        if cached_result is not None:
+            logger.info(
+                "Nearby-place cache hit | Category: %s | "
+                "Radius: %sm | Results: %s | Source: %s",
+                category,
+                radius,
+                cached_result.get("result_count", 0),
+                cached_result.get("source"),
+            )
+
+            return cached_result
+
+        # 2. Try Overpass first.
         try:
-            return self.search_nearby(
+            result = self.search_nearby(
                 latitude=latitude,
                 longitude=longitude,
                 category=category,
@@ -826,18 +934,24 @@ class PlacesClient:
             )
 
         except ExternalAPIError:
+            # 3. Switch to Geoapify when Overpass is unavailable.
             logger.warning(
-                "Overpass unavailable. "
-                "Switching to Geoapify fallback."
+                "Overpass unavailable. Switching to Geoapify fallback."
             )
 
-        return self.search_nearby_geoapify(
-            latitude=latitude,
-            longitude=longitude,
-            category=category,
-            radius=radius,
-            limit=limit,
-        )
+            result = self.search_nearby_geoapify(
+                latitude=latitude,
+                longitude=longitude,
+                category=category,
+                radius=radius,
+                limit=limit,
+            )
+
+        # 4. Cache successful, non-empty results.
+        self._save_nearby_cache(cache_key, result)
+
+        return result
+
 
     #Get the best available administrative area label from OSM tags.
     @staticmethod
@@ -944,6 +1058,27 @@ class PlacesClient:
 
         if osm_type not in {"relation", "way"} or osm_id is None:
             raise ValueError("A usable country boundary was not found.")
+        # Country-wide attraction cache.
+        cache_key = (
+            "country",
+            str(osm_type),
+            int(osm_id),
+            category,
+            limit,
+        )
+
+        cached_result = self._get_nearby_cache(cache_key)
+
+        if cached_result is not None:
+            logger.info(
+                "Country attraction cache hit | Country: %s | "
+                "Category: %s | Results: %s",
+                country_name,
+                category,
+                cached_result.get("result_count", 0),
+            )
+
+            return cached_result
 
         try:
             # 1. Retrieve the actual country polygon.
@@ -1082,7 +1217,7 @@ class PlacesClient:
                 for region, region_places in grouped_places.items()
             ]
 
-            return {
+            result = {
                 "country": country_name,
                 "category": category,
                 "search_scope": "country",
@@ -1105,6 +1240,9 @@ class PlacesClient:
                     "https://www.openstreetmap.org/copyright"
                 ),
             }
+
+            self._save_nearby_cache(cache_key, result)
+            return result
 
         except requests.RequestException as exc:
             # Do not log the exception URL because it may contain
