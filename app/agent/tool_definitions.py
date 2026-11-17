@@ -112,17 +112,23 @@ UPDATE_TRIP_REQUIREMENTS_TOOL = {
 ESTIMATE_TRAVEL_COST_TOOL = {
     "type": "function",
     "name": "estimate_travel_cost",
+
     "description": (
-        "Estimate trip costs using the destination cost catalog. "
+        "Estimate trip costs using the local destination cost catalog first. "
+        "The catalog checks city-level records before country-level records. "
+        "If no suitable record exists, the tool automatically performs "
+        "validated live web research for the requested price tier. "
         "Provide the destination, trip duration, and number of travelers. "
-        "Use the appropriate price tier: budget, mid_range, or luxury. "
-        "If the user has not specified a travel style, use null. "
-        "A saved travel style may be applied by the backend. "
-        "Provide the country when available to help identify the destination. "
-        "Use the supplied budget information for budget comparison. "
-        "Never invent market prices or provide fabricated cost assumptions. "
-        "The catalog may return city-level data or fall back to country-level data."
+        "Use budget, mid_range, or luxury for the user's travel style. "
+        "Use null when travel style is unspecified so the backend can "
+        "apply the default mid-range tier. "
+        "Provide the country when available for destination identification. "
+        "Use the supplied budget amount and currency for budget comparison. "
+        "The result includes the estimated cost, source information, "
+        "assumptions, and budget comparison. "
+        "Never invent unsupported prices or cost assumptions."
     ),
+
     "parameters": {
         "type": "object",
         "properties": {

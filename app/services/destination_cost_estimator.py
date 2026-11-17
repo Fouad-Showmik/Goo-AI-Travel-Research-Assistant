@@ -36,6 +36,7 @@ def estimate_catalog_trip_cost(
     budget_currency: str | None = None,
     budget_includes_flights: bool = False,
     currency_client: Any | None = None,
+    researched_match: dict[str, Any] | None = None,
 ):
 
     if travelers < 1:
@@ -48,11 +49,20 @@ def estimate_catalog_trip_cost(
             "duration_days must be at least 1"
         )
 
-    match = catalog.lookup(
-        destination=destination,
-        price_tier=price_tier,
-        country=country,
-    )
+    if researched_match is not None:
+        if researched_match.get("status") != "found":
+            raise ValueError(
+                "A valid researched cost match is required."
+            )
+
+        match = researched_match
+
+    else:
+        match = catalog.lookup(
+            destination=destination,
+            price_tier=price_tier,
+            country=country,
+        )
 
     if match is None:
         return {
@@ -170,7 +180,7 @@ def estimate_catalog_trip_cost(
         )
 
         budget_message = (
-            "The catalog estimate excludes international "
+            "This land-trip estimate excludes international "
             "flights. The complete budget cannot be assessed "
             "without an airfare estimate."
         )
@@ -198,7 +208,7 @@ def estimate_catalog_trip_cost(
                 )
 
                 budget_message = (
-                    "The budget is below the catalog's "
+                    "The budget is below the source's "
                     "published starting-cost estimate. "
                     "Actual costs may be higher."
                 )
@@ -298,15 +308,24 @@ def estimate_catalog_trip_cost(
 
     if price_is_lower_bound:
         result["assumptions"].append(
-            "The city dataset provides starting prices, not "
-            "average prices or upper bounds; the result is "
-            "a starting-cost estimate."
+            "The source provides a published starting price, "
+            "not an average or upper bound; actual costs may be higher."
         )
-
     else:
         result["assumptions"].append(
-            "The country dataset provides recorded average "
-            "daily costs; actual city costs may differ."
+            "The source provides a recorded average daily cost; "
+            "actual spending may vary."
+        )
+
+    if match.get("location_level") == "country":
+        result["assumptions"].append(
+            "The source represents country-level costs, which may "
+            "differ from the specific destination city or region."
+        )
+    elif match.get("location_level") == "region":
+        result["assumptions"].append(
+            "The source represents regional costs, which may differ "
+            "across individual cities and areas."
         )
 
     return result
