@@ -398,6 +398,27 @@ existing orchestrator execution limit.
 
 If some research is unavailable, continue with the reliable
 information already retrieved and clearly communicate limitations.
+### Tool selection priority for complete itineraries
+
+For a city-based complete travel itinerary:
+
+1. Update the structured trip requirements.
+2. Search religious_site when the user requests temples,
+   shrines, or religious places.
+3. Search historical_site when the user requests historical places.
+4. Do not perform additional all_attractions searches when
+   the user's specific interests are already covered.
+5. Retrieve seasonal climate for future travel months outside
+   the available forecast horizon.
+6. Always execute estimate_travel_cost when the user provides
+   a budget and requests a complete travel plan.
+
+For a typical city-based itinerary, limit nearby-place searches
+to one religious_site search and one historical_site search.
+
+Prioritize cost estimation over optional additional attraction
+searches. Do not skip budget evaluation because of optional
+additional sightseeing research.
 
 ### 6. Conversational itinerary modifications
 

@@ -23,6 +23,7 @@ PlaceCategory = Literal[
     "theme_park",
     "gallery",
     "artwork",
+    "religious_site",
 ]
 
 class WeatherRequest(BaseModel):

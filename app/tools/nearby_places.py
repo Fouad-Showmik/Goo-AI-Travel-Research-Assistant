@@ -77,13 +77,14 @@ def search_nearby_places(
         }
 
     # City or region destination: use the existing radius search.
-    nearby_data = client.search_nearby(
+# City or region destination: use nearby search with fallback.
+    nearby_data = client.search_nearby_with_fallback(
         latitude=selected_location["latitude"],
         longitude=selected_location["longitude"],
         category=category,
         radius=radius,
         limit=limit,
-    )
+)
 
     overpass_time = perf_counter() - overpass_start
     total_time = perf_counter() - total_start
@@ -104,5 +105,5 @@ def search_nearby_places(
         "radius_meters": nearby_data["radius_meters"],
         "results": nearby_data["results"],
         "result_count": nearby_data["result_count"],
-        "source": "OpenStreetMap Nominatim + Overpass API",
+        "source": nearby_data["source"],
     }

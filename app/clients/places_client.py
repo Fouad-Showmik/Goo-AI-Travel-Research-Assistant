@@ -36,7 +36,6 @@ class PlacesClient:
         "attraction": ("tourism.attraction", "tourism.sights"),
         "museum": ("entertainment.museum",),
         "viewpoint": ("tourism.attraction.viewpoint",),
-        "historical_site": ("tourism.sights", "building.historic"),
         "beach": ("beach",),
         "waterfall": ("natural.water",),
         "park": (
@@ -51,6 +50,18 @@ class PlacesClient:
         "theme_park": ("entertainment.theme_park",),
         "gallery": ("entertainment.culture.gallery",),
         "artwork": ("tourism.attraction.artwork",),
+        "historical_site": (
+            "tourism.sights.archaeological_site",
+            "tourism.sights.castle",
+            "tourism.sights.memorial.monument",
+            "tourism.sights.monastery",
+        ),
+        "religious_site": (
+            "tourism.sights.place_of_worship.temple",
+            "tourism.sights.place_of_worship.shrine",
+            "religion.place_of_worship.buddhism",
+            "religion.place_of_worship.shinto",
+        ),
     }
 
     HEADERS: ClassVar[dict[str, str]] = {"User-Agent": "GooTravelResearchAssistant/0.1"}
@@ -99,11 +110,10 @@ class PlacesClient:
             '["tourism"="viewpoint"]',
         ],
         "historical_site": [
-            '["historic"="monument"]',
-            '["historic"="memorial"]',
-            '["historic"="castle"]',
-            '["historic"="ruins"]',
-            '["historic"="archaeological_site"]',
+            '["historic"="castle"]["name"]',
+            '["historic"="building"]["name"]',
+            '["historic"="ruins"]["name"]',
+            '["historic"="archaeological_site"]["name"]',
         ],
         # Nature and outdoor activities
         "beach": [
@@ -138,6 +148,12 @@ class PlacesClient:
         "artwork": [
             '["tourism"="artwork"]',
         ],
+        "religious_site": [
+            '["amenity"="place_of_worship"]["religion"="buddhist"]["name"]',
+            '["amenity"="place_of_worship"]["religion"="shinto"]["name"]',
+            '["building"="temple"]["name"]',
+            '["historic"="wayside_shrine"]["name"]',
+        ],
     }
 
     COUNTRY_SEARCH_CATEGORIES: ClassVar[frozenset[str]] = frozenset({
@@ -156,6 +172,7 @@ class PlacesClient:
     "theme_park",
     "gallery",
     "artwork",
+    "religious_site",
     })
 
     #Fetch Nominatim data with rate limiting and caching.
@@ -563,15 +580,22 @@ class PlacesClient:
 
                 time.sleep(delay)
 
-            except requests.ConnectionError:
+            except (requests.Timeout, requests.ConnectionError) as exc:
+
                 if attempt >= max_retries:
+                    logger.error(
+                        "Overpass request failed after %s attempts: %s",
+                        max_retries + 1,
+                        type(exc).__name__,
+                    )
                     raise
 
                 delay = 2 ** (attempt + 1)
 
                 logger.warning(
-                    "Overpass connection failed. "
+                    "Overpass request failed (%s). "
                     "Retrying in %s seconds (%s/%s).",
+                    type(exc).__name__,
                     delay,
                     attempt + 1,
                     max_retries,
@@ -641,7 +665,7 @@ class PlacesClient:
 
                 places.append(
                     {
-                        "name": tags.get("name", "Unnamed place"),
+                        "name": tags.get("name:en") or tags.get("name", "Unnamed place"),
                         "category": category,
                         "address": tags.get("addr:full"),
                         "latitude": coordinates["lat"],
@@ -678,6 +702,142 @@ class PlacesClient:
                 "Nearby places search is temporarily unavailable."
             ) from exc
 
+
+    def search_nearby_geoapify(
+    self,
+    latitude: float,
+    longitude: float,
+    category: str,
+    radius: int = 5000,
+    limit: int = 20,
+):
+        if category not in self.GEOAPIFY_CATEGORIES:
+            raise ValueError(f"Unsupported category: {category}")
+
+        api_key = settings.geoapify_api_key
+
+        if not api_key:
+            raise ExternalAPIError(
+                "Geoapify API key is not configured."
+            )
+
+        params = {
+            "categories": ",".join(
+                self.GEOAPIFY_CATEGORIES[category]
+            ),
+            "conditions": "named",
+            "filter": (
+                f"circle:{longitude},{latitude},{radius}"
+            ),
+            "bias": f"proximity:{longitude},{latitude}",
+            "limit": limit,
+            "lang": "en",
+            "apiKey": api_key,
+        }
+
+        try:
+            response = requests.get(
+                self.GEOAPIFY_PLACES_URL,
+                params=params,
+                timeout=(10, 25),
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+            places = []
+
+            for feature in data.get("features", []):
+                properties = feature.get("properties") or {}
+                geometry = feature.get("geometry") or {}
+                coordinates = geometry.get("coordinates") or []
+
+                if len(coordinates) < 2:
+                    continue
+
+                name = (
+                    properties.get("name")
+                    or properties.get("address_line1")
+                )
+
+                if not name:
+                    continue
+
+                places.append({
+                    "name": name,
+                    "category": category,
+                    "categories": properties.get("categories", []),
+                    "address": properties.get("formatted"),
+                    "latitude": float(coordinates[1]),
+                    "longitude": float(coordinates[0]),
+                    "place_id": properties.get("place_id"),
+                })
+
+            return {
+                "latitude": latitude,
+                "longitude": longitude,
+                "category": category,
+                "radius_meters": radius,
+                "results": places,
+                "result_count": len(places),
+                "source": "Geoapify Places API",
+                "attribution": "Powered by Geoapify",
+                "attribution_url": "https://www.geoapify.com/",
+            }
+
+        except requests.RequestException as exc:
+            status_code = getattr(
+                getattr(exc, "response", None),
+                "status_code",
+                None,
+            )
+
+            logger.error(
+                "Geoapify nearby search failed. HTTP status: %s",
+                status_code,
+            )
+
+            raise ExternalAPIError(
+                "Geoapify nearby search is temporarily unavailable."
+            ) from None
+
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.exception("Geoapify response processing failed")
+
+            raise ExternalAPIError(
+                "Geoapify returned an invalid places response."
+            ) from exc
+
+    def search_nearby_with_fallback(
+    self,
+    latitude: float,
+    longitude: float,
+    category: str,
+    radius: int = 5000,
+    limit: int = 20,
+):
+        try:
+            return self.search_nearby(
+                latitude=latitude,
+                longitude=longitude,
+                category=category,
+                radius=radius,
+                limit=limit,
+            )
+
+        except ExternalAPIError:
+            logger.warning(
+                "Overpass unavailable. "
+                "Switching to Geoapify fallback."
+            )
+
+        return self.search_nearby_geoapify(
+            latitude=latitude,
+            longitude=longitude,
+            category=category,
+            radius=radius,
+            limit=limit,
+        )
 
     #Get the best available administrative area label from OSM tags.
     @staticmethod

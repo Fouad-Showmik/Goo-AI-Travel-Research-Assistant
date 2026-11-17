@@ -337,6 +337,11 @@ TOOL_DEFINITIONS = [
             "Country-level results are limited and are not exhaustive. "
             "Country-wide searches support sightseeing, not "
             "restaurants, cafes, or hotels."
+            "Use religious_site for Buddhist temples, Shinto shrines, "
+            "and other religious places. "
+            "Use historical_site for castles, archaeological sites, "
+            "monuments, memorials, and historical monasteries. "
+            "Use all_attractions for general sightseeing."
         ),
         "parameters": {
             "type": "object",

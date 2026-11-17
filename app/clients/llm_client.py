@@ -3,8 +3,8 @@ import logging
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import ValidationError
 import requests
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.travel_cost_research import DestinationCostResearch
@@ -46,7 +46,7 @@ class LLMClient:
 
         try:
             response = requests.post(
-                self.url, headers=self.headers, json=payload, timeout=30
+                self.url, headers=self.headers, json=payload, timeout=(10, 90),
             )
             response.raise_for_status()
             return response.json()
