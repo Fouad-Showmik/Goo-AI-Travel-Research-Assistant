@@ -1,59 +1,204 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#fff8ed">
-    <title>Delicious Kitchen</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <link rel="icon" type="image/png" href="assets/dish.png">
-    <script type="module" src="js/main.js"></script>
-  </head>
-  <body>
-    <main class="chat-card">
-      <header class="chat-header">
-        <div class="brand">
-          <span class="brand-logo" aria-hidden="true">
-  <img src="assets/dish.png" alt="">
-</span>
-          <div class="brand-copy">
-            <h1>Delicious Kitchen</h1>
-            <p>Your friendly home kitchen assistant</p>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#104744">
+  <meta name="description"
+    content="Goo is an AI travel research assistant for destination research, travel budgets, weather, and practical itineraries.">
+  <title>Goo — AI Travel Research Assistant</title>
+  <link rel="icon" type="image/svg+xml" href="assets/goo-mark.svg">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="#chat" aria-label="Goo home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" role="presentation">
+            <path d="M5 14.3 26.5 5.5 18 27l-3.2-8.3L5 14.3Z" />
+            <path d="m14.8 18.7 6.1-6.1" />
+          </svg>
+        </span>
+        <span class="brand-copy">
+          <strong>Goo</strong>
+          <small>AI Travel Research Assistant</small>
+        </span>
+      </a>
+
+      <button class="new-trip-button" id="new-chat" type="button">
+        <span aria-hidden="true">＋</span> New trip
+      </button>
+
+      <div class="sidebar-section-label">WORKSPACE</div>
+      <nav class="primary-nav" aria-label="Workspace">
+        <button class="nav-item is-active" type="button" data-view="chat" aria-current="page">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z" />
+            <path d="M8 10h8M8 14h5" />
+          </svg>
+          <span>Chat with Assistant</span>
+        </button>
+        <button class="nav-item" type="button" data-view="sources">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 4.5h8a2 2 0 0 1 2 2v13l-6-3-6 3v-13a2 2 0 0 1 2-2Z" />
+            <path d="M9 8h6M9 11.5h6" />
+          </svg>
+          <span>Sources</span>
+        </button>
+      </nav>
+
+      <div class="current-trip" id="current-trip" hidden>
+        <div class="sidebar-section-label">CURRENT TRIP</div>
+        <div class="current-trip-card">
+          <span class="current-trip-dot" aria-hidden="true"></span>
+          <div>
+            <strong id="sidebar-trip-title">Your trip</strong>
+            <small id="sidebar-trip-meta">Requirements in progress</small>
           </div>
         </div>
-        <button class="new-chat-button" id="new-chat" type="button" aria-label="Start a new chat">
-          <span aria-hidden="true">＋</span>
-          <span>New chat</span>
-        </button>
-      </header>
+      </div>
 
-      <section class="conversation" aria-label="Chat conversation">
-        <ol class="message-list" id="message-list" aria-live="polite" aria-relevant="additions text"></ol>
-        <nav class="quick-replies" id="quick-replies" aria-label="Suggested questions">
-          <button type="button" class="quick-reply">What's on the menu?</button>
-          <button type="button" class="quick-reply">Vegetarian options?</button>
-          <button type="button" class="quick-reply">Delivery areas &amp; fees</button>
-          <button type="button" class="quick-reply">Opening hours</button>
-          <button type="button" class="quick-reply">Refund policy</button>
-        </nav>
+      <div class="sidebar-footer">
+        <span class="privacy-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12 3 19 6v5c0 4.5-2.7 8-7 10-4.3-2-7-5.5-7-10V6l7-3Z" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+        </span>
+        <span>Start planning without an account</span>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <section class="workspace-view chat-workspace" id="chat-view" aria-label="Travel planning workspace">
+        <section class="chat-panel" aria-label="Conversation with Goo">
+          <header class="trip-header">
+            <p class="eyebrow">YOUR TRAVEL PLAN</p>
+            <h1 id="trip-title">Where would you like to go?</h1>
+            <p class="trip-subtitle" id="trip-subtitle">Tell Goo where you're going, and let's plan the details
+              together.</p>
+          </header>
+
+          <div class="conversation" id="conversation">
+            <ol class="message-list" id="message-list" aria-live="polite" aria-relevant="additions text"></ol>
+            <div class="quick-replies" id="quick-replies" aria-label="Suggested travel prompts">
+              <p class="quick-replies-label">GET STARTED</p>
+              <button type="button" class="quick-reply">Plan a 5-day trip to Kyoto for 2 travelers from Dhaka.</button>
+              <button type="button" class="quick-reply">Estimate a mid-range budget for Bangkok.</button>
+              <button type="button" class="quick-reply">What is the weather usually like in Japan in April?</button>
+            </div>
+          </div>
+
+          <form class="composer" id="chat-form">
+            <label class="visually-hidden" for="message-input">Message Goo</label>
+            <textarea id="message-input" name="message" rows="1" maxlength="4000" autocomplete="off"
+              placeholder="Ask Goo to plan or refine your trip..." aria-label="Message Goo"></textarea>
+            <button class="send-button" id="send-button" type="submit" aria-label="Send message">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4 4 17 8-17 8 3-8-3-8Z" />
+                <path d="M7 12h14" />
+              </svg>
+            </button>
+          </form>
+          <p class="composer-note">Enter to send · Shift + Enter for a new line</p>
+        </section>
+
+        <aside class="dashboard-panel" aria-label="Trip overview">
+          <div class="dashboard-stream-status" id="dashboard-stream-status" hidden aria-live="polite">
+            <span class="status-pulse" aria-hidden="true"></span>
+            <span id="dashboard-stream-status-text">Researching your trip...</span>
+          </div>
+          <div class="dashboard-empty" id="dashboard-empty">
+            <div class="empty-illustration" aria-hidden="true">
+              <svg viewBox="0 0 120 100">
+                <path d="M15 78 42 49l17 17 20-27 27 39H15Z" />
+                <path d="M70 39V20m-8 8 8-8 8 8" />
+                <circle cx="29" cy="25" r="8" />
+              </svg>
+            </div>
+            <h2>Your trip details will appear here</h2>
+            <p>Once Goo researches your destination, you'll see the budget, seasonal weather, and day-by-day itinerary
+              in this panel.</p>
+          </div>
+
+          <div class="dashboard-content" id="dashboard-content" hidden>
+            <div class="overview-grid">
+              <section class="info-card budget-card" aria-labelledby="budget-heading">
+                <div class="card-topline">
+                  <h2 id="budget-heading">Estimated budget</h2>
+                  <span class="exchange-rate" id="exchange-rate"></span>
+                </div>
+                <p class="budget-total" id="budget-total">—</p>
+                <p class="budget-equation" id="budget-equation"></p>
+                <div class="budget-track" id="budget-track" aria-hidden="true"><span></span></div>
+                <div class="budget-footer">
+                  <span id="budget-limit">Budget not provided</span>
+                  <strong id="budget-difference"></strong>
+                </div>
+                <p class="card-footnote" id="budget-note"></p>
+              </section>
+
+              <section class="info-card weather-card" aria-labelledby="weather-heading">
+                <div class="card-topline">
+                  <h2 id="weather-heading">Seasonal weather</h2>
+                  <span class="weather-period" id="weather-period"></span>
+                </div>
+                <div class="temperature-pair">
+                  <div><strong id="weather-high">—</strong><span>avg high</span></div>
+                  <div><strong id="weather-low">—</strong><span>avg low</span></div>
+                </div>
+                <p class="weather-details" id="weather-details">Weather information will appear when available.</p>
+                <p class="card-footnote" id="weather-note"></p>
+              </section>
+            </div>
+
+            <section class="itinerary-card" aria-labelledby="itinerary-heading">
+              <div class="itinerary-header">
+                <div>
+                  <p class="eyebrow">YOUR PLAN</p>
+                  <h2 id="itinerary-heading">Day-by-day itinerary</h2>
+                </div>
+                <div class="itinerary-actions">
+                  <button class="secondary-button" id="export-plan" type="button" disabled>Export</button>
+                  <button class="primary-button" id="share-plan" type="button" disabled>Share plan</button>
+                </div>
+              </div>
+              <p class="stale-plan-note" id="stale-plan-note" hidden>Your trip requirements changed. Ask Goo to
+                regenerate the itinerary to update this plan.</p>
+              <div class="itinerary-list" id="itinerary-list">
+                <p class="itinerary-placeholder">Your researched daily plan will appear here.</p>
+              </div>
+              <div class="source-summary" id="source-summary" hidden>
+                <strong>Sources</strong>
+                <span id="source-summary-items"></span>
+                <button class="text-button" type="button" data-view="sources">View all sources</button>
+              </div>
+            </section>
+          </div>
+        </aside>
       </section>
 
-      <form class="composer" id="chat-form">
-        <label class="visually-hidden" for="message-input">Your message</label>
-        <input
-          id="message-input"
-          name="message"
-          type="text"
-          maxlength="500"
-          autocomplete="off"
-          placeholder="Ask us anything about the kitchen..."
-          aria-label="Your message"
-        >
-        <button class="send-button" id="send-button" type="submit" aria-label="Send message">
-          <span aria-hidden="true">➤</span>
-        </button>
-      </form>
-      <p class="composer-note">Made with care, served with a smile</p>
+      <section class="workspace-view sources-view" id="sources-view" hidden aria-label="Research sources">
+        <header class="sources-header">
+          <p class="eyebrow">RESEARCH TRANSPARENCY</p>
+          <h1>Sources</h1>
+          <p>Review where the costs, weather, and places in your travel plan come from.</p>
+        </header>
+        <div class="sources-grid" id="sources-grid">
+          <div class="sources-empty">
+            <h2>No research sources yet</h2>
+            <p>Ask Goo to research a destination. Sources used in its response will appear here.</p>
+            <button class="primary-button" type="button" data-view="chat">Start planning</button>
+          </div>
+        </div>
+        <div class="sources-note" id="sources-note" hidden></div>
+      </section>
     </main>
-  </body>
+  </div>
+</body>
+
 </html>

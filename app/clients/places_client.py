@@ -18,6 +18,22 @@ class PlacesClient:
     OVERPASS_URL = "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
     GEOAPIFY_PLACES_URL = "https://api.geoapify.com/v2/places"
 
+    # Overpass request configuration.
+    OVERPASS_TIMEOUT: ClassVar[tuple[int, int]] = (5, 15)
+
+    # One retry means two total attempts.
+    OVERPASS_MAX_RETRIES: ClassVar[int] = 1
+
+    OVERPASS_RETRY_DELAY_SECONDS: ClassVar[int] = 1
+
+    # Skip Overpass temporarily after repeated failures.
+    OVERPASS_COOLDOWN_SECONDS: ClassVar[int] = 120
+
+    # Shared circuit-breaker state across PlacesClient instances.
+    _OVERPASS_STATE_LOCK: ClassVar[threading.Lock] = threading.Lock()
+
+    _OVERPASS_UNAVAILABLE_UNTIL: ClassVar[float] = 0.0
+
     GEOAPIFY_CATEGORIES: ClassVar[dict[str, tuple[str, ...]]] = {
         "all_attractions": (
             "tourism.attraction",
@@ -603,9 +619,43 @@ class PlacesClient:
                 "Place search is temporarily unavailable."
             ) from exc
 
+    @classmethod
+    def _overpass_cooldown_remaining(cls) -> float:
+        with cls._OVERPASS_STATE_LOCK:
+            return max(
+                0.0,
+                cls._OVERPASS_UNAVAILABLE_UNTIL - time.monotonic(),
+            )
+
+    @classmethod
+    def _open_overpass_circuit(cls):
+        with cls._OVERPASS_STATE_LOCK:
+            cls._OVERPASS_UNAVAILABLE_UNTIL = (
+                time.monotonic() + cls.OVERPASS_COOLDOWN_SECONDS
+            )
+
+        logger.error(
+            "Overpass unavailable after repeated failures. "
+            "Circuit opened for %s seconds.",
+            cls.OVERPASS_COOLDOWN_SECONDS,
+        )
+
+
     # Search for nearby places using Overpass API.
     # Send an Overpass request with two retry for transient failures.
-    def _post_overpass(self, query: str, timeout: tuple[int, int] = (10,45), max_retries: int =2):
+    def _post_overpass(
+    self,
+    query: str,
+    timeout: tuple[int, int] | None = None,
+    max_retries: int | None = None,
+    ):
+        cls = type(self)
+
+        if timeout is None:
+            timeout = cls.OVERPASS_TIMEOUT
+
+        if max_retries is None:
+            max_retries = cls.OVERPASS_MAX_RETRIES
 
         retryable_status_codes = {
             429,  # Too Many Requests
@@ -646,9 +696,10 @@ class PlacesClient:
                         max_retries + 1,
                         status_code,
                     )
+                    cls._open_overpass_circuit()
                     raise
 
-                delay = 2 ** (attempt + 1)
+                delay = cls.OVERPASS_RETRY_DELAY_SECONDS
 
                 logger.warning(
                     "Overpass returned HTTP %s. "
@@ -669,9 +720,10 @@ class PlacesClient:
                         max_retries + 1,
                         type(exc).__name__,
                     )
+                    cls._open_overpass_circuit()
                     raise
 
-                delay = 2 ** (attempt + 1)
+                delay = cls.OVERPASS_RETRY_DELAY_SECONDS
 
                 logger.warning(
                     "Overpass request failed (%s). "
@@ -898,59 +950,45 @@ class PlacesClient:
         radius: int = 5000,
         limit: int = 20,
     ):
-        # Build a key from all parameters that affect the search.
-        cache_key = (
-            "radius",
-            round(float(latitude), 5),
-            round(float(longitude), 5),
-            category,
-            radius,
-            limit,
+
+        cooldown_remaining = (
+            type(self)._overpass_cooldown_remaining()
         )
 
-        # 1. Check the cache before contacting external providers.
-        cached_result = self._get_nearby_cache(cache_key)
+        if cooldown_remaining > 0:
 
-        if cached_result is not None:
-            logger.info(
-                "Nearby-place cache hit | Category: %s | "
-                "Radius: %sm | Results: %s | Source: %s",
-                category,
-                radius,
-                cached_result.get("result_count", 0),
-                cached_result.get("source"),
-            )
-
-            return cached_result
-
-        # 2. Try Overpass first.
-        try:
-            result = self.search_nearby(
-                latitude=latitude,
-                longitude=longitude,
-                category=category,
-                radius=radius,
-                limit=limit,
-            )
-
-        except ExternalAPIError:
-            # 3. Switch to Geoapify when Overpass is unavailable.
             logger.warning(
-                "Overpass unavailable. Switching to Geoapify fallback."
+                "Skipping Overpass because the circuit breaker "
+                "is active for %.1f more seconds. "
+                "Using Geoapify directly.",
+                cooldown_remaining,
             )
 
-            result = self.search_nearby_geoapify(
-                latitude=latitude,
-                longitude=longitude,
-                category=category,
-                radius=radius,
-                limit=limit,
-            )
+        else:
 
-        # 4. Cache successful, non-empty results.
-        self._save_nearby_cache(cache_key, result)
+            try:
+                return self.search_nearby(
+                    latitude=latitude,
+                    longitude=longitude,
+                    category=category,
+                    radius=radius,
+                    limit=limit,
+                )
 
-        return result
+            except ExternalAPIError:
+
+                logger.warning(
+                    "Overpass unavailable. "
+                    "Switching to Geoapify fallback."
+                )
+
+        return self.search_nearby_geoapify(
+            latitude=latitude,
+            longitude=longitude,
+            category=category,
+            radius=radius,
+            limit=limit,
+        )
 
 
     #Get the best available administrative area label from OSM tags.

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
-    MAX_TOOL_CALLS = 5
+    MAX_TOOL_CALLS = 7
 
     def __init__(self, client: LLMClient):  # Dependency Injection
         self.client = client
@@ -145,7 +145,7 @@ class AgentOrchestrator:
             for provider_event in self.client.stream_complete(
                 conversation_input,
                 tools=None if disable_tools_on_next_request else TOOL_DEFINITIONS,
-                tool_choice="auto",
+                tool_choice="none" if disable_tools_on_next_request else "auto",
                 parallel_tool_calls=False,
             ):
                 if provider_event["type"] == "text_delta":

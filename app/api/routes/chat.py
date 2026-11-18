@@ -66,12 +66,11 @@ def stream_chat(request: Request, body: ChatRequest, service: ChatServiceDep):
              
     return StreamingResponse(
         event_stream(),
-        media_type="text/event-stram",
+        media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
 
 @router.delete("/{session_id}", status_code=204)

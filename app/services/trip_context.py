@@ -27,9 +27,15 @@ class TripContextService:
         return self.store.get_trip_context(session_id)
 
     def update(self, session_id: str, updates: dict):
+        filtered_updates = {
+            field: value
+            for field, value in updates.items()
+            if value is not None
+        }
+
         return self.store.update_trip_context(
             session_id,
-            updates,
+            filtered_updates,
         )
 
     def get_missing_required_fields(self, session_id: str):
