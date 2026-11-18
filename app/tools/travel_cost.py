@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import logging
+from copy import deepcopy
 from threading import Lock
 from time import monotonic
 from typing import Any
