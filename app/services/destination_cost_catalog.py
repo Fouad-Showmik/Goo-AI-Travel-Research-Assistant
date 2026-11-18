@@ -94,10 +94,20 @@ class DestinationCostCatalog:
             else data_dir / "country_travel_costs.csv"
         )
 
-        self._city_records = self._load_csv(
+        self._destination_records = self._load_csv(
             self.city_csv,
-            expected_level="city",
+            expected_level=("city", "region"),
         )
+
+        self._city_records = [
+            row for row in self._destination_records
+            if row["location_level"] == "city"
+        ]
+
+        self._region_records = [
+            row for row in self._destination_records
+            if row["location_level"] == "region"
+        ]
 
         self._country_records = self._load_csv(
             self.country_csv,
@@ -105,6 +115,11 @@ class DestinationCostCatalog:
         )
 
         self._city_index: dict[
+            tuple[str, str],
+            list[dict[str, str]]
+        ] = {}
+
+        self._region_index: dict[
             tuple[str, str],
             list[dict[str, str]]
         ] = {}
@@ -121,6 +136,14 @@ class DestinationCostCatalog:
             )
 
             self._city_index.setdefault(key, []).append(row)
+
+        for row in self._region_records:
+            key = (
+                self._normalize(row["destination_name"]),
+                self._normalize_country(row["country_name"]),
+            )
+
+            self._region_index.setdefault(key, []).append(row)
 
         for row in self._country_records:
             key = self._normalize_country(
@@ -235,8 +258,13 @@ class DestinationCostCatalog:
     def _load_csv(
         self,
         path: Path,
-        expected_level: str,
+        expected_level: str | tuple[str, ...],
     ):
+        expected_levels = (
+            {expected_level}
+            if isinstance(expected_level, str)
+            else set(expected_level)
+        )
 
         if not path.is_file():
             raise DestinationCostCatalogError(
@@ -269,11 +297,18 @@ class DestinationCostCatalog:
                     start=2,
                 ):
 
-                    if row.get("location_level") != expected_level:
+                    actual_level = (
+                        row.get("location_level") or ""
+                    ).strip().lower()
+
+                    if actual_level not in expected_levels:
                         raise DestinationCostCatalogError(
-                            f"Unexpected location_level at "
-                            f"{path.name}:{line_number}"
+                            f"Unexpected location_level '{actual_level}' "
+                            f"at {path.name}:{line_number}. "
+                            f"Expected one of: {sorted(expected_levels)}"
                         )
+
+                    row["location_level"] = actual_level
 
                     if (
                         not row.get("destination_name")
@@ -393,6 +428,47 @@ class DestinationCostCatalog:
                 ),
             }
 
+        # No city match: try an exact region match.
+        region_key = self._normalize(destination_name)
+
+        if country_key:
+            region_matches = self._region_index.get(
+                (region_key, country_key),
+                [],
+            )
+        else:
+            region_matches = [
+                row
+                for (
+                    candidate_region,
+                    _candidate_country,
+                ), records in self._region_index.items()
+                if candidate_region == region_key
+                for row in records
+            ]
+
+        if len(region_matches) == 1:
+            return self._serialize_match(
+                region_matches[0],
+                tier,
+                tier_column,
+                tier_defaulted,
+            )
+
+        if len(region_matches) > 1:
+            return {
+                "status": "ambiguous_region",
+                "destination": destination_name,
+                "candidate_countries": sorted({
+                    row["country_name"]
+                    for row in region_matches
+                }),
+                "message": (
+                    "A country is required to select "
+                    "the correct region record."
+                ),
+            }
+
         # No city found: try the explicitly provided country.
         # If destination itself is a country name, use it.
         country_candidate = country_name or destination_name
@@ -455,5 +531,6 @@ class DestinationCostCatalog:
     def counts(self):
         return {
             "city_records": len(self._city_records),
+            "region_records": len(self._region_records),
             "country_records": len(self._country_records),
         }

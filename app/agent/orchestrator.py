@@ -127,6 +127,108 @@ class AgentOrchestrator:
 
             total_tokens += self._get_total_tokens(response)
 
+    #Run the same agent loop while forwarding model text deltas.
+    def run_stream(
+        self,
+        input_items: list[dict[str, Any]],
+        tool_context: dict[str, Any] | None = None,
+    ):
+        conversation_input = list(input_items)
+        total_tokens = 0
+        tool_calls_executed = 0
+        disable_tools_on_next_request = False
+
+        yield {"type": "status", "message": "Thinking through your request"}
+
+        while True:
+            response = None
+            for provider_event in self.client.stream_complete(
+                conversation_input,
+                tools=None if disable_tools_on_next_request else TOOL_DEFINITIONS,
+                tool_choice="auto",
+                parallel_tool_calls=False,
+            ):
+                if provider_event["type"] == "text_delta":
+                    yield provider_event
+                elif provider_event["type"] == "response":
+                    response = provider_event["response"]
+
+            if response is None:
+                raise LLMClientError("The LLM provider did not return a completed response.")
+
+            total_tokens += self._get_total_tokens(response)
+            output_items = response.get("output", [])
+            function_calls = [
+                item for item in output_items
+                if item.get("type") == "function_call"
+            ]
+
+            if not function_calls:
+                yield {"type": "agent_complete", "total_tokens": total_tokens}
+                return
+
+            conversation_input.extend(output_items)
+            function_outputs = []
+            tool_limit_reached = False
+
+            for tool_call in function_calls:
+                tool_name = tool_call.get("name")
+                call_id = tool_call.get("call_id")
+                raw_arguments = tool_call.get("arguments")
+
+                if not tool_name or not call_id:
+                    raise LLMClientError("LLM returned an incomplete function call.")
+
+                if tool_calls_executed >= self.MAX_TOOL_CALLS:
+                    logger.warning(
+                        "Maximum tool-call limit reached: %s",
+                        self.MAX_TOOL_CALLS,
+                    )
+                    tool_result = {
+                        "error": (
+                            "The maximum number of tool executions "
+                            "for this request has been reached. "
+                            "Provide a final answer using the information already retrieved."
+                        )
+                    }
+                    tool_limit_reached = True
+
+                else:
+                    tool_calls_executed += 1
+                    yield {
+                        "type": "tool_start",
+                        "name": tool_name,
+                        "step": tool_calls_executed,
+                    }
+                    tool_result = self._execute_tool(
+                        tool_name,
+                        raw_arguments,
+                        call_id,
+                        tool_calls_executed,
+                        tool_context,
+                    )
+                    yield {
+                        "type": "tool_complete",
+                        "name": tool_name,
+                        "step": tool_calls_executed,
+                    }
+
+                function_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps(tool_result, ensure_ascii=False),
+                    }
+                )
+            conversation_input.extend(function_outputs)
+
+            disable_tools_on_next_request = tool_limit_reached
+            if tool_limit_reached:
+                yield {"type": "status", "message": "Preparing the final response"}
+            else:
+                yield {"type": "status", "message": "Reviewing research results"}
+
+
     @staticmethod
     def _execute_tool(
         tool_name: str,

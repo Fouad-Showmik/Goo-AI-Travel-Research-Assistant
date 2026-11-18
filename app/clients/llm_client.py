@@ -79,6 +79,114 @@ class LLMClient:
             logger.exception("LLM returned an invalid JSON response")
             raise LLMClientError("LLM returned an invalid response.") from exc
 
+    #Stream a Responses API request and emit text deltas plus its final response
+    #The final response object is required by the agent orchestrator to inspect
+    #function calls and continue the existing tool-execution loop.
+    def stream_complete(
+            self,
+            input_item: list[dict[str, Any]],
+            *,
+            tools: list[dict[str, Any]] | None = None,
+            tool_choice: str | dict[str, Any] | None = None,
+            parallel_tool_calls: bool,
+            ):
+
+        payload = {
+            "model": settings.model_name,
+            "input": input_item,
+            "stream": True, 
+        }
+
+        if tools is not None:
+            payload["tools"] = tools
+            payload["tool_choice"] = tool_choice or "auto"
+            payload["parallel_tool_calls"] = parallel_tool_calls
+
+        response = None
+        completed_response = None
+
+        try:
+            response = requests.post(
+                self.url,
+                headers={**self.headers, "Accept": "text/event-stream"},
+                json=payload,
+                stream=True,
+                timeout=(10,90),
+            )
+            response.raise_for_status()
+
+            for raw_line in response.iter_lines(decode_unicode=True, chunk_size=1):
+                if not raw_line:
+                    continue
+                line = (
+                    raw_line.decode("utf-8")
+                    if isinstance(raw_line, bytes)
+                    else raw_line
+                )
+
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+
+
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    logger.warning("Ignoring an invalid SSE event from the LLM provider.")
+                    continue
+
+                event_type = event.get("type")
+
+                if event_type == "response.output_text.delta":
+                    delta = event.get("delta")
+                    if isinstance(delta, str) and delta:
+                        yield {"type": "text_delta", "delta": delta}
+
+                elif event_type in {"response.completed", "response.done"}:
+                    completed_response = event.get("response")
+                    if isinstance(completed_response, dict):
+                        yield {"type": "response", "response": completed_response}
+
+                elif event_type in {"error", "response.failed"}:
+                    failed_response = event.get("response") or {}
+                    details = event.get("error") or failed_response.get("error") or event
+                    raise LLMClientError(f"OpenAI streaming request failed: {details}")
+
+            if completed_response is None:
+                raise LLMClientError("The LLM provider stream ended before completion.")
+            
+        except requests.HTTPError as exc:
+            error_response = exc.response
+            status_code = (
+                error_response.status_code if error_response is not None else "unknown"
+            )
+            try:
+                error_details = error_response.json().get("error", {})
+            except (ValueError, AttributeError):
+                error_details = (
+                    error_response.text[:1500]
+                    if error_response is not None
+                    else "No response body"
+                )
+            logger.error(
+                "OpenAI streaming API returned HTTP %s: %s",
+                status_code,
+                error_details,
+            )
+            raise LLMClientError(
+                f"OpenAI API request failed: {error_details}"
+            ) from exc
+
+        except requests.RequestException as exc:
+            logger.exception("LLM streaming request failed")
+            raise LLMClientError(str(exc)) from exc
+
+        finally:
+            if response is not None:
+                response.close()    
+
     #Prepare the Pydantic schema for strict Structured Outputs.
     @staticmethod
     def _get_research_json_schema():
