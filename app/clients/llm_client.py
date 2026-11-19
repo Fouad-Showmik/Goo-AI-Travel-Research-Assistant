@@ -114,6 +114,7 @@ class LLMClient:
                 timeout=(10,90),
             )
             response.raise_for_status()
+            response.encoding = "utf-8"
 
             for raw_line in response.iter_lines(decode_unicode=True, chunk_size=1):
                 if not raw_line:
