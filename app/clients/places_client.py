@@ -17,6 +17,31 @@ class PlacesClient:
     NOMINATIM_LOOKUP_URL = "https://nominatim.openstreetmap.org/lookup"
     OVERPASS_URL = "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
     GEOAPIFY_PLACES_URL = "https://api.geoapify.com/v2/places"
+    GEOAPIFY_GEOCODING_URL = "https://api.geoapify.com/v1/geocode/search"
+    GEOAPIFY_BOUNDARIES_URL = "https://api.geoapify.com/v1/boundaries/part-of"
+
+    # Destination geocoding cache.
+    GEOCODING_CACHE_TTL: ClassVar[int] = 24 * 60 * 60
+    GEOCODING_CACHE_MAX_ITEMS: ClassVar[int] = 256
+
+    _GEOCODING_CACHE_LOCK: ClassVar[threading.Lock] = (
+        threading.Lock()
+    )
+
+    _GEOCODING_CACHE: ClassVar[
+        dict[tuple[str, int], tuple[float, dict[str, Any]]]
+    ] = {}
+
+    # Country-boundary cache.
+    _COUNTRY_BOUNDARY_CACHE_TTL: ClassVar[int] = 24 * 60 * 60
+
+    _COUNTRY_BOUNDARY_CACHE_LOCK: ClassVar[threading.Lock] = (
+        threading.Lock()
+    )
+
+    _COUNTRY_BOUNDARY_CACHE: ClassVar[
+        dict[tuple[str, str], tuple[float, dict[str, Any]]]
+    ] = {}
 
     # Overpass request configuration.
     OVERPASS_TIMEOUT: ClassVar[tuple[int, int]] = (5, 15)
@@ -343,85 +368,163 @@ class PlacesClient:
     @classmethod
     def _get_country_geometry(
         cls,
-        osm_type: str,
-        osm_id: int,
-    ):
-        osm_prefix = {
-            "relation": "R",
-            "way": "W",
-        }.get(osm_type)
+        *,
+        country_name: str,
+        place_id: str | None,
+        latitude: float | None,
+        longitude: float | None,
+    ) -> dict[str, Any]:
 
-        if not osm_prefix:
-            raise ValueError("Unsupported country boundary type.")
+        api_key = settings.geoapify_api_key
 
-        cache_key = (f"boundary:{osm_prefix}{osm_id}", 1)
+        if not api_key:
+            raise ExternalAPIError(
+                "Geoapify API key is not configured."
+            )
 
-        with cls._NOMINATIM_LOCK:
+        if not place_id and (
+            latitude is None or longitude is None
+        ):
+            raise ValueError(
+                "A country place ID or coordinates are required."
+            )
 
-            # Check the existing Nominatim cache.
-            now = time.monotonic()
-            cached = cls._NOMINATIM_CACHE.get(cache_key)
+        lookup_key = (
+            str(place_id)
+            if place_id
+            else f"{latitude},{longitude}"
+        )
+
+        cache_key = (
+            lookup_key,
+            country_name.strip().casefold(),
+        )
+
+        with cls._COUNTRY_BOUNDARY_CACHE_LOCK:
+
+            cached = cls._COUNTRY_BOUNDARY_CACHE.get(cache_key)
 
             if cached:
-                cached_time, cached_geometry = cached
+                cached_time, geometry = cached
 
-                if now - cached_time < cls.NOMINATIM_CACHE_TTL:
-                    return cached_geometry
+                if (
+                    time.monotonic() - cached_time
+                    < cls._COUNTRY_BOUNDARY_CACHE_TTL
+                ):
+                    return deepcopy(geometry)
 
-                del cls._NOMINATIM_CACHE[cache_key]
+                cls._COUNTRY_BOUNDARY_CACHE.pop(cache_key, None)
 
-            # Respect the same rate limit used by geocoding.
-            elapsed = now - cls._NOMINATIM_LAST_REQUEST
+        params = {
+            "boundaries": "administrative",
+            "geometry": "geometry_1000",
+            "lang": "en",
+            "apiKey": api_key,
+        }
 
-            if elapsed < cls.NOMINATIM_REQUEST_INTERVAL:
-                time.sleep(
-                    cls.NOMINATIM_REQUEST_INTERVAL - elapsed
-                )
+        # Use exactly one lookup method: place ID or coordinates.
+        if place_id:
+            params["id"] = place_id
+        else:
+            params["lat"] = latitude
+            params["lon"] = longitude
 
-            cls._NOMINATIM_LAST_REQUEST = time.monotonic()
-
+        try:
             response = requests.get(
-                cls.NOMINATIM_LOOKUP_URL,
-                params={
-                    "osm_ids": f"{osm_prefix}{osm_id}",
-                    "format": "geojson",
-                    "polygon_geojson": 1,
-                },
+                cls.GEOAPIFY_BOUNDARIES_URL,
+                params=params,
                 headers=cls.HEADERS,
                 timeout=(10, 40),
             )
 
             response.raise_for_status()
 
-            data = response.json()
-            features = data.get("features", [])
+            payload = response.json()
 
-            if not features:
-                raise ValueError(
-                    "Country boundary geometry was not found."
+            if not isinstance(payload, dict):
+                raise TypeError(
+                    "Invalid Geoapify boundaries response."
                 )
 
-            geometry = features[0].get("geometry")
+            expected_name = country_name.strip().casefold()
 
-            if not geometry:
-                raise ValueError(
-                    "Country boundary geometry is missing."
+
+            for feature in payload.get("features", []):
+
+                properties = feature.get("properties") or {}
+                geometry = feature.get("geometry") or {}
+
+                feature_place_id = properties.get("place_id")
+
+                feature_name = (
+                    properties.get("name") or ""
+                ).strip().casefold()
+
+                feature_formatted = (
+                    properties.get("formatted") or ""
+                ).strip().casefold()
+
+                # Prefer the exact Geoapify place ID.
+                # Fall back to either the native or formatted country name.
+                matches_country = (
+                    bool(place_id)
+                    and feature_place_id == place_id
+                ) or (
+                    expected_name in {
+                        feature_name,
+                        feature_formatted,
+                    }
                 )
 
-            if geometry.get("type") not in {"Polygon", "MultiPolygon"}:
-                raise ValueError("Unsupported country geometry.")
+                if not matches_country:
+                    continue
 
-            # Cache the geometry for 24 hours.
-            cls._NOMINATIM_CACHE[cache_key] = (
-                time.monotonic(),
-                geometry,
+                if geometry.get("type") not in {
+                    "Polygon",
+                    "MultiPolygon",
+                }:
+                    continue
+
+                with cls._COUNTRY_BOUNDARY_CACHE_LOCK:
+                    cls._COUNTRY_BOUNDARY_CACHE[cache_key] = (
+                        time.monotonic(),
+                        deepcopy(geometry),
+                    )
+
+                return geometry
+
+
+            raise ValueError(
+                f"Country boundary not found for '{country_name}'."
             )
 
-            if len(cls._NOMINATIM_CACHE) > cls.NOMINATIM_MAX_CACHE_ITEMS:
-                oldest_key = next(iter(cls._NOMINATIM_CACHE))
-                del cls._NOMINATIM_CACHE[oldest_key]
+        except requests.RequestException as exc:
 
-            return geometry
+            status_code = getattr(
+                getattr(exc, "response", None),
+                "status_code",
+                None,
+            )
+
+            logger.error(
+                "Geoapify country boundary request failed. "
+                "HTTP status: %s",
+                status_code,
+            )
+
+            raise ExternalAPIError(
+                "Country boundary lookup is temporarily unavailable."
+            ) from None
+
+        except (KeyError, TypeError, ValueError):
+
+            logger.exception(
+                "Geoapify country boundary processing failed."
+            )
+
+            raise ExternalAPIError(
+                "A valid country boundary could not be retrieved."
+            ) from None
 
     #Normalize Polygon and MultiPolygon GeoJSON geometries.
     @staticmethod
@@ -542,82 +645,181 @@ class PlacesClient:
             max(latitudes),
         )
 
+    @classmethod
+    def _get_geoapify_geocoding_data(
+        cls,
+        query: str,
+        limit: int,
+    ) -> dict[str, Any]:
+
+        api_key = settings.geoapify_api_key
+
+        if not api_key:
+            raise ExternalAPIError(
+                "Geoapify API key is not configured."
+            )
+
+        cache_key = (query.strip().casefold(), limit)
+
+        with cls._GEOCODING_CACHE_LOCK:
+
+            now = time.monotonic()
+            cached = cls._GEOCODING_CACHE.get(cache_key)
+
+            if cached:
+                cached_time, cached_data = cached
+
+                if now - cached_time < cls.GEOCODING_CACHE_TTL:
+                    logger.info(
+                        "Geocoding cache hit | Query: %s",
+                        query,
+                    )
+                    return deepcopy(cached_data)
+
+                cls._GEOCODING_CACHE.pop(cache_key, None)
+
+            try:
+                response = requests.get(
+                    cls.GEOAPIFY_GEOCODING_URL,
+                    params={
+                        "text": query,
+                        "format": "json",
+                        "limit": limit,
+                        "lang": "en",
+                        "apiKey": api_key,
+                    },
+                    headers=cls.HEADERS,
+                    timeout=(10, 20),
+                )
+
+                response.raise_for_status()
+
+                payload = response.json()
+
+                if not isinstance(payload, dict):
+                    raise TypeError(
+                        "Invalid Geoapify geocoding response."
+                    )
+
+                results = []
+
+                for item in payload.get("results", []):
+
+                    if not isinstance(item, dict):
+                        continue
+
+                    try:
+                        latitude = float(item["lat"])
+                        longitude = float(item["lon"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+
+                    datasource = item.get("datasource")
+                    if not isinstance(datasource, dict):
+                        datasource = {}
+
+                    raw = datasource.get("raw")
+                    if not isinstance(raw, dict):
+                        raw = {}
+
+                    results.append({
+                        "name": (
+                            item.get("name")
+                            or item.get("address_line1")
+                            or item.get("formatted")
+                            or query
+                        ),
+                        "osm_category": raw.get("osm_key"),
+                        "osm_value": raw.get("osm_value"),
+                        "place_type": (
+                            item.get("result_type")
+                            or item.get("type")
+                        ),
+                        "address": (
+                            item.get("formatted")
+                            or item.get("address_line1")
+                        ),
+                        "country": item.get("country"),
+                        "state": item.get("state"),
+                        "city": item.get("city"),
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "osm_type": raw.get("osm_type"),
+                        "osm_id": raw.get("osm_id"),
+                        "place_id": item.get("place_id"),
+                    })
+
+                result = {
+                    "query": query,
+                    "results": results,
+                    "source": "Geoapify Geocoding API",
+                    "attribution": "Powered by Geoapify",
+                    "attribution_url": "https://www.geoapify.com/",
+                }
+
+                # Cache successful lookups only.
+                if results:
+
+                    cls._GEOCODING_CACHE[cache_key] = (
+                        time.monotonic(),
+                        deepcopy(result),
+                    )
+
+                    if (
+                        len(cls._GEOCODING_CACHE)
+                        > cls.GEOCODING_CACHE_MAX_ITEMS
+                    ):
+                        oldest_key = min(
+                            cls._GEOCODING_CACHE,
+                            key=lambda key: cls._GEOCODING_CACHE[key][0],
+                        )
+                        cls._GEOCODING_CACHE.pop(oldest_key, None)
+
+                logger.info(
+                    "Geoapify geocoding completed | Query: %s | "
+                    "Results: %s",
+                    query,
+                    len(results),
+                )
+
+                return result
+
+            except requests.RequestException as exc:
+
+                status_code = getattr(
+                    getattr(exc, "response", None),
+                    "status_code",
+                    None,
+                )
+
+                # Do not log the URL because it may contain the API key.
+                logger.error(
+                    "Geoapify geocoding failed. HTTP status: %s",
+                    status_code,
+                )
+
+                raise ExternalAPIError(
+                    "Destination geocoding is temporarily unavailable."
+                ) from None
+
+            except (KeyError, TypeError, ValueError):
+
+                logger.exception(
+                    "Geoapify returned an invalid geocoding response."
+                )
+
+                raise ExternalAPIError(
+                    "Geoapify returned an invalid geocoding response."
+                ) from None
+
     # Resolve a geographic location using Nominatim GeoCodeJSON
+# Resolve a geographic location using Geoapify.
     def search(self, query: str, limit: int = 5):
 
-        try:
-            data = self._get_nominatim_data(query, limit)
-            features = data.get("features", [])
-
-            results = []
-
-            for feature in features:
-                properties = feature.get("properties") or {}
-
-                # GeoCodeJSON stores geocoding attributes inside
-                # the properties.geocoding object.
-                geocoding = properties.get("geocoding") or properties
-
-                geometry = feature.get("geometry") or {}
-                coordinates = geometry.get("coordinates") or []
-
-                if geometry.get("type") != "Point" or len(coordinates) < 2:
-                    continue
-
-                try:
-                    longitude = float(coordinates[0])
-                    latitude = float(coordinates[1])
-                except (TypeError, ValueError):
-                    continue
-
-                results.append({
-                    "name": (
-                        geocoding.get("name")
-                        or geocoding.get("label", "Unknown place")
-                    ),
-                    "osm_category": (
-                        geocoding.get("osm_key")
-                        or properties.get("osm_key")
-                    ),
-                    "osm_value": (
-                        geocoding.get("osm_value")
-                        or properties.get("osm_value")
-                    ),
-                    "place_type": geocoding.get("type"),
-                    "address": geocoding.get("label"),
-                    "country": geocoding.get("country"),
-                    "state": geocoding.get("state"),
-                    "city": geocoding.get("city"),
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "osm_type": (
-                        geocoding.get("osm_type")
-                        or properties.get("osm_type")
-                    ),
-                    "osm_id": (
-                        geocoding.get("osm_id")
-                        or properties.get("osm_id")
-                    ),
-                })
-
-            return {
-                "query": query,
-                "results": results,
-                "source": "OpenStreetMap Nominatim",
-                "attribution": "© OpenStreetMap contributors",
-                "attribution_url": "https://www.openstreetmap.org/copyright",
-            }
-
-        except (
-            requests.RequestException,
-            KeyError,
-            TypeError,
-            ValueError,
-        ) as exc:
-            logger.exception("Places search failed")
-            raise ExternalAPIError(
-                "Place search is temporarily unavailable."
-            ) from exc
+        return self._get_geoapify_geocoding_data(
+            query=query,
+            limit=limit,
+        )
 
     @classmethod
     def _overpass_cooldown_remaining(cls) -> float:
@@ -958,21 +1160,27 @@ class PlacesClient:
         if cooldown_remaining > 0:
 
             logger.warning(
-                "Skipping Overpass because the circuit breaker "
-                "is active for %.1f more seconds. "
-                "Using Geoapify directly.",
-                cooldown_remaining,
+                "Skipping Overpass because its circuit breaker "
+                "is active. Using Geoapify directly."
             )
 
         else:
 
             try:
-                return self.search_nearby(
+                result = self.search_nearby(
                     latitude=latitude,
                     longitude=longitude,
                     category=category,
                     radius=radius,
                     limit=limit,
+                )
+
+                if result.get("result_count", 0) > 0:
+                    return result
+
+                logger.warning(
+                    "Overpass returned no matching places. "
+                    "Switching to Geoapify fallback."
                 )
 
             except ExternalAPIError:
@@ -1091,16 +1299,20 @@ class PlacesClient:
             or "Unknown country"
         )
 
-        osm_type = country.get("osm_type")
-        osm_id = country.get("osm_id")
+        place_id = country.get("place_id")
+        latitude = country.get("latitude")
+        longitude = country.get("longitude")
 
-        if osm_type not in {"relation", "way"} or osm_id is None:
-            raise ValueError("A usable country boundary was not found.")
-        # Country-wide attraction cache.
+        if not place_id and (
+            latitude is None or longitude is None
+        ):
+            raise ValueError(
+                "A usable country boundary location was not found."
+            )
+
         cache_key = (
             "country",
-            str(osm_type),
-            int(osm_id),
+            str(place_id or f"{latitude},{longitude}"),
             category,
             limit,
         )
@@ -1121,28 +1333,33 @@ class PlacesClient:
         try:
             # 1. Retrieve the actual country polygon.
             geometry = self._get_country_geometry(
-                osm_type=osm_type,
-                osm_id=osm_id,
+                country_name=country_name,
+                place_id=place_id,
+                latitude=latitude,
+                longitude=longitude,
             )
-
-            # 2. Calculate its bounding box.
-            lon_min, lat_min, lon_max, lat_max = (
-                self._get_country_bbox(geometry)
-            )
-
-            # 3. Select Geoapify categories.
+            # 2. Select Geoapify categories.
             categories = self.GEOAPIFY_CATEGORIES[category]
 
-            # Fetch extra candidates because some results inside
-            # the bounding rectangle may be outside the country.
+            # Use the Geoapify place boundary when a place ID is
+            # available. Fall back to the country bounding box when
+            # the geocoding result only provides coordinates.
+            if place_id:
+                spatial_filter = f"place:{place_id}"
+            else:
+                lon_min, lat_min, lon_max, lat_max = (
+                    self._get_country_bbox(geometry)
+                )
+                spatial_filter = (
+                    f"rect:{lon_min},{lat_min},{lon_max},{lat_max}"
+                )
+
             api_limit = 100
 
             params = {
                 "categories": ",".join(categories),
                 "conditions": "named",
-                "filter": (
-                    f"rect:{lon_min},{lat_min},{lon_max},{lat_max}"
-                ),
+                "filter": spatial_filter,
                 "limit": api_limit,
                 "lang": "en",
                 "apiKey": api_key,

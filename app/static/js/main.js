@@ -41,12 +41,13 @@ function cleanMarkdown(value = "") {
     .trim();
 }
 
+
 function extractField(text, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   const expression = new RegExp(
-    `(?:^|\\n)\\s*(?:[-*]\\s*)?\\*{0,2}${escaped}\\*{0,2}\\s*:\\s*(.+)$`,
-    "im",
+    `(?:^|\\n)\\s*(?:[-*]\\s*)?(?:\\*{0,2}${escaped}\\*{0,2}\\s*:\\s*|\\*{0,2}${escaped}:\\*{0,2}\\s*)(.+)$`,
+    "im"
   );
 
   const match = text.match(expression);
@@ -54,16 +55,30 @@ function extractField(text, label) {
   return match ? cleanMarkdown(match[1]) : null;
 }
 
+
 function parseMoney(text) {
   if (!text) return null;
 
-  const match = text.match(/([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\b/i);
+  const match = String(text).match(
+    /(?:\b([A-Z]{3})\s*([\d,]+(?:\.\d+)?)\b|US\$\s*([\d,]+(?:\.\d+)?)|\b([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\b)/i
+  );
 
   if (!match) return null;
 
+  const currency = (
+    match[1] ||
+    (match[3] ? "USD" : match[5])
+  ).toUpperCase();
+
+  const amount = (
+    match[2] ||
+    match[3] ||
+    match[4]
+  );
+
   return {
-    amount: Number(match[1].replace(/,/g, "")),
-    currency: match[2].toUpperCase(),
+    amount: Number(amount.replace(/,/g, "")),
+    currency,
   };
 }
 
@@ -117,7 +132,7 @@ function parseWeather(text, currentTrip) {
   );
 
   const noteMatch = plain.match(
-    /(?:not a forecast|historical patterns?|historical observations?)[^.]*\.?/i,
+    /(?:not a forecast|historical patterns?|historical observations?)(?:\d+\.\d+|[^.])*\./i,
   );
 
   const details = [];
@@ -151,147 +166,146 @@ function parseWeather(text, currentTrip) {
 function parseCost(text, trip) {
   const section = findSection(
     text,
-    /budget|travel\s+cost|estimated\s+cost/i,
+    /estimated travel budget|budget|travel\s+cost|estimated\s+cost/i
   );
 
   if (!section) return {};
 
   const plain = cleanMarkdown(section);
 
-  const dailyMatch =
+  const dailyText =
     plain.match(
-      /(?:published\s+starting\s+cost|daily\s+cost\s+per\s+person|per\s+person\s+per\s+day)[^\n]{0,90}?(?:US\$|USD\s*)\s*([\d,]+(?:\.\d+)?)/i,
-    ) ||
+      /(?:daily cost per person|daily cost|per person per day)\s*:?\s*((?:USD|US\$)\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s*[A-Z]{3})/i
+    )?.[1]
+    ||
     plain.match(
-      /(?:US\$|USD\s*)\s*([\d,]+(?:\.\d+)?)\s+per\s+person\s+per\s+day/i,
-    );
+      /((?:USD|US\$)\s*[\d,]+(?:\.\d+)?)\s+per person per day/i
+    )?.[1];
 
-  const totalUsdMatch =
-    plain.match(
-      /For\s+[\d,]+\s+travelers?\s*[×x]\s*[\d,]+\s+days?\s*:\s*(?:US\$|USD\s*)\s*([\d,]+(?:\.\d+)?)/i,
-    ) ||
-    plain.match(
-      /(?:estimated\s+(?:land[- ]trip\s+)?total|land[- ]trip\s+total)[^\n]{0,90}?(?:US\$|USD\s*)\s*([\d,]+(?:\.\d+)?)/i,
-    );
+  const totalText = plain.match(
+    /(?:estimated\s+(?:land[- ]trip\s+)?total|trip total|total cost|city-level estimate is|region-level estimate is|country-level estimate is)\s*:?\s*((?:USD|US\$)\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s*[A-Z]{3})/i
+  )?.[1];
 
-  const convertedMatch =
-    plain.match(
-      /converted(?:\s+by\s+the\s+estimator)?\s+to\s+(?:approximately\s+|about\s+|around\s+)?([\d,]+(?:\.\d+)?)\s*([A-Z]{3})/i,
-    ) ||
-    plain.match(
-      /(?:converted\s+comparison|converted\s+total|total\s+in)[^\n]{0,80}?([\d,]+(?:\.\d+)?)\s*([A-Z]{3})/i,
-    );
+  const convertedText = plain.match(
+    /converted(?:\s+by\s+the\s+estimator)?(?:\s+(?:this|the estimate))?(?:\s+(?:comparison|total))?\s*:?\s*(?:to\s*)?(?:about\s+|approximately\s+)?((?:[A-Z]{3}|US\$)\s*[\d,]+(?:\.\d+)?|[\d,]+(?:\.\d+)?\s*[A-Z]{3})/i
+  )?.[1];
 
-  const overviewBudgetMatch = text.match(
-    /(?:^|\n)\s*[-*]\s*\*{0,2}([A-Za-z][\w -]*?)\s+budget\*{0,2}\s*:\s*\*{0,2}\s*([\d,]+(?:\.\d+)?)\s*([A-Z]{3})([^\n]*)/im,
+  const budgetText =
+    plain.match(
+      /(?:your budget|land budget|budget)\s*:\s*([^.;]+)/i
+    )?.[1]
+    || extractField(text, "Budget")
+    || extractField(text, "Your budget");
+
+  const dailyMoney = parseMoney(dailyText);
+  const totalMoney = parseMoney(totalText);
+  const convertedMoney = parseMoney(convertedText);
+  const budgetMoney = parseMoney(budgetText);
+
+  const dailyUsd =
+    dailyMoney?.currency === "USD"
+      ? dailyMoney.amount
+      : null;
+
+  let totalUsd =
+    totalMoney?.currency === "USD"
+      ? totalMoney.amount
+      : null;
+
+  // Derive the total only when the tool returned a daily
+  // per-person cost and the trip requirements are known.
+  if (
+    totalUsd == null &&
+    dailyUsd != null &&
+    trip.travelers &&
+    trip.durationDays
+  ) {
+    totalUsd = dailyUsd * trip.travelers * trip.durationDays;
+  }
+
+  const totalLocal = convertedMoney?.amount ?? null;
+  const localCurrency = convertedMoney?.currency ?? null;
+
+  const budget = budgetMoney || (
+    trip.budget != null && trip.budgetCurrency
+      ? {
+          amount: trip.budget,
+          currency: trip.budgetCurrency,
+        }
+      : null
   );
-
-  const comparisonBudgetMatch = plain.match(
-    /budget\s+comparison\s*:[^\n]*?([\d,]+(?:\.\d+)?)\s*([A-Z]{3})\s+budget/i,
-  );
-
-  const dailyUsd = dailyMatch
-    ? Number(dailyMatch[1].replace(/,/g, ""))
-    : null;
-
-  const totalUsd = totalUsdMatch
-    ? Number(totalUsdMatch[1].replace(/,/g, ""))
-    : null;
-
-  const totalLocal = convertedMatch
-    ? Number(convertedMatch[1].replace(/,/g, ""))
-    : null;
-
-  const localCurrency = convertedMatch?.[2]?.toUpperCase() || null;
-
-  const overviewBudget = overviewBudgetMatch
-    ? {
-        amount: Number(overviewBudgetMatch[2].replace(/,/g, "")),
-        currency: overviewBudgetMatch[3].toUpperCase(),
-      }
-    : null;
-
-  const comparisonBudget = comparisonBudgetMatch
-    ? {
-        amount: Number(comparisonBudgetMatch[1].replace(/,/g, "")),
-        currency: comparisonBudgetMatch[2].toUpperCase(),
-      }
-    : null;
-
-  const budget =
-    overviewBudget ||
-    comparisonBudget ||
-    (
-      trip.budget != null && trip.budgetCurrency
-        ? {
-            amount: trip.budget,
-            currency: trip.budgetCurrency,
-          }
-        : null
-    );
 
   const rateMatch =
     plain.match(
-      /reference\s+rate\s+of\s+([\d,.]+)\s*([A-Z]{3})\s+per\s+USD/i,
-    ) ||
+      /reference\s+rate(?:\s+of)?\s+([\d,.]+)\s*([A-Z]{3})\s+per\s+USD/i
+    )
+    ||
     plain.match(
-      /1\s*USD\s*=\s*([\d,.]+)\s*([A-Z]{3})/i,
+      /1\s*USD\s*=\s*([\d,.]+)\s*([A-Z]{3})/i
     );
 
-  const excludedMatch = plain.match(
-    /\*?Excluded\*?\s*:\s*([^\n.]+(?:\.)?)/i,
-  );
+  let difference = null;
+  let differenceCurrency = null;
 
-  const startingNoteMatch = plain.match(
-    /The\s+source\s+gives\s+a\s+starting\s+price[^.]*\./i,
-  );
-
-  const difference =
-    totalLocal != null && budget
-      ? totalLocal - budget.amount
-      : null;
+  if (budget) {
+    if (
+      totalLocal != null &&
+      localCurrency === budget.currency
+    ) {
+      difference = totalLocal - budget.amount;
+      differenceCurrency = localCurrency;
+    } else if (
+      totalUsd != null &&
+      budget.currency === "USD"
+    ) {
+      difference = totalUsd - budget.amount;
+      differenceCurrency = "USD";
+    }
+  }
 
   const notes = [];
 
-  if (trip.budgetScope) {
-    notes.push(`${trip.budgetScope} budget`);
-  }
+  const startingNote = plain.match(
+    /starting price[^.]*\./i
+  );
 
-  if (startingNoteMatch) {
-    notes.push(startingNoteMatch[0]);
-  }
+  const excludedNote = plain.match(
+    /\b(?:excluded|excludes)\b[^.]*/i
+  );
 
-  if (excludedMatch) {
-    notes.push(`Excluded: ${excludedMatch[1]}`);
-  }
+  if (startingNote) notes.push(startingNote[0]);
+  if (excludedNote) notes.push(excludedNote[0]);
 
   return {
     ...(dailyUsd != null ? { dailyUsd } : {}),
     ...(totalUsd != null ? { totalUsd } : {}),
-
     ...(totalLocal != null
       ? { totalLocal, currency: localCurrency }
       : {}),
-
     ...(budget
-      ? { budget: budget.amount, currency: budget.currency }
+      ? {
+          budget: budget.amount,
+          budgetCurrency: budget.currency,
+        }
       : {}),
-
-    ...(difference != null ? { difference } : {}),
-
+    ...(difference != null
+      ? { difference, differenceCurrency }
+      : {}),
     ...(rateMatch
       ? {
-          exchangeRate: Number(rateMatch[1].replace(/,/g, "")),
-          currency: rateMatch[2].toUpperCase(),
+          exchangeRate: Number(
+            rateMatch[1].replace(/,/g, "")
+          ),
         }
       : {}),
-
     ...(dailyUsd != null && trip.travelers && trip.durationDays
       ? {
-          equation: `US$${dailyUsd.toLocaleString()} × ${trip.travelers} travelers × ${trip.durationDays} days`,
+          equation:
+            `US$${dailyUsd.toLocaleString()} × ` +
+            `${trip.travelers} travelers × ` +
+            `${trip.durationDays} days`,
         }
       : {}),
-
     ...(notes.length
       ? { note: notes.join(" · ").slice(0, 320) }
       : {}),
@@ -629,37 +643,49 @@ function parseSources(text) {
   return sources;
 }
 
+
 function parsePlanReply(reply, existing) {
   const trip = { ...existing.trip };
 
-  const origin = extractField(reply, "Origin");
-  const destination = extractField(reply, "Destination");
+  const origin =
+    extractField(reply, "Origin") ||
+    extractField(reply, "From");
+
+  const destination =
+    extractField(reply, "Destination") ||
+    extractField(reply, "To");
+
   const travelers = extractField(reply, "Travelers");
   const duration = extractField(reply, "Duration");
 
-  const style =
+  const styleText =
     extractField(reply, "Travel style") ||
     extractField(reply, "Style");
 
-  const budget = extractField(reply, "Budget");
-
-  const month =
+  const monthText =
     extractField(reply, "Travel month") ||
     extractField(reply, "Travel dates") ||
     extractField(reply, "Travel period") ||
     extractField(reply, "When");
 
-  const route = reply.match(
-    /(?:^|\n)\s*[-*]\s*\*{0,2}Route\*{0,2}\s*:\s*(.+?)\s*(?:→|->)\s*(.+?)\s*$/im,
-  );
+  const routeText = extractField(reply, "Route");
 
-  const overviewBudget = reply.match(
-    /(?:^|\n)\s*[-*]\s*\*{0,2}([A-Za-z][\w -]*?)\s+budget\*{0,2}\s*:\s*\*{0,2}\s*([\d,]+(?:\.\d+)?)\s*([A-Z]{3})([^\n]*)/im,
-  );
+  const yourBudget = extractField(reply, "Your budget");
+  const landBudget = extractField(reply, "Land budget");
+  const genericBudget = extractField(reply, "Budget");
 
-  if (route) {
-    trip.origin = cleanMarkdown(route[1]);
-    trip.destination = cleanMarkdown(route[2]);
+  const budgetText = yourBudget || landBudget || genericBudget;
+
+  // Extract origin and destination from a combined route if needed.
+  if (!origin && !destination && routeText) {
+    const route = routeText.match(
+      /^(.+?)\s*(?:→|->)\s*(.+)$/
+    );
+
+    if (route) {
+      trip.origin = cleanMarkdown(route[1]);
+      trip.destination = cleanMarkdown(route[2]);
+    }
   }
 
   if (origin) trip.origin = origin;
@@ -667,50 +693,55 @@ function parsePlanReply(reply, existing) {
 
   if (travelers) {
     const count = travelers.match(/\d+/);
-
-    if (count) {
-      trip.travelers = Number(count[0]);
-    }
+    if (count) trip.travelers = Number(count[0]);
   }
 
   if (duration) {
     const count = duration.match(/\d+/);
+    if (count) trip.durationDays = Number(count[0]);
+  }
 
-    if (count) {
-      trip.durationDays = Number(count[0]);
+  // Accept only an actual user-selected travel style.
+  if (styleText) {
+    const normalizedStyle = cleanMarkdown(styleText)
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+
+    if (
+      ["budget", "mid_range", "luxury"].includes(normalizedStyle)
+    ) {
+      trip.travelStyle = normalizedStyle;
     }
   }
 
-  if (style) {
-    trip.travelStyle = style.toLowerCase().replace(/[ -]/g, "_");
-  }
+  // Extract the user's budget, including currency-first formats.
+  if (budgetText) {
+    const parsedBudget = parseMoney(budgetText);
 
-  if (budget) {
-    const money = parseMoney(budget);
+    if (parsedBudget) {
+      trip.budget = parsedBudget.amount;
+      trip.budgetCurrency = parsedBudget.currency;
 
-    if (money) {
-      trip.budget = money.amount;
-      trip.budgetCurrency = money.currency;
+      trip.budgetScope = landBudget
+        ? "Land"
+        : null;
     }
   }
 
-  if (overviewBudget) {
-    trip.budget = Number(overviewBudget[2].replace(/,/g, ""));
-    trip.budgetCurrency = overviewBudget[3].toUpperCase();
-    trip.budgetScope = overviewBudget[1]
-      .replace(/[-_]+/g, " ")
-      .trim();
+  // Extract only the actual month and year, if supplied.
+  if (monthText) {
+    const monthMatch = cleanMarkdown(monthText).match(
+      /\b(January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+20\d{2})?\b/i
+    );
 
-    trip.budgetExclusions = cleanMarkdown(overviewBudget[4])
-      .replace(/^[;,\s]+/, "");
+    if (monthMatch) {
+      trip.travelMonth = monthMatch[0];
+    }
   }
 
-  if (month) {
-    trip.travelMonth = month;
-  }
-
+  // Preserve the existing title and duration fallbacks.
   const titleMatch = reply.match(
-    /^#\s+(.+?)\s*:\s*(?:Complete\s+)?\d+[- ]day itinerary/im,
+    /^#\s+(.+?)\s*:\s*(?:Complete\s+)?\d+[- ]day itinerary/im
   );
 
   if (!trip.destination && titleMatch) {
@@ -719,21 +750,11 @@ function parsePlanReply(reply, existing) {
 
   if (!trip.durationDays) {
     const headingDuration = reply.match(
-      /^#.*?\b(\d+)[- ]day itinerary/im,
+      /^#.*?\b(\d+)[- ]day itinerary/im
     );
 
     if (headingDuration) {
       trip.durationDays = Number(headingDuration[1]);
-    }
-  }
-
-  if (!trip.travelMonth) {
-    const monthMatch = reply.match(
-      /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+20\d{2}\b/i,
-    );
-
-    if (monthMatch) {
-      trip.travelMonth = monthMatch[0];
     }
   }
 
@@ -766,6 +787,7 @@ function parsePlanReply(reply, existing) {
 
   return { next, isFullPlan };
 }
+
 
 function applyRequirementAcknowledgement(reply) {
   const duration = reply.match(
@@ -1007,7 +1029,7 @@ async function handleSend(message) {
       replyBubble,
       "bot",
       isTripReport
-        ? "Your trip research is ready in the workspace. You can review the budget, seasonal weather, itinerary, and sources on the right."
+        ? "Goo finished the available trip research. Review the workspace; any unavailable research is explained in the report."
         : streamedText,
     );
 

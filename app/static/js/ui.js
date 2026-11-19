@@ -314,13 +314,31 @@ export function renderDashboard(data = {}) {
   setText("#budget-total", cost.totalLocal != null ? `${formatNumber(cost.totalLocal)} ${cost.currency || ""}`.trim() : (cost.totalUsd != null ? `US$${formatNumber(cost.totalUsd, 2)}` : "Awaiting estimate"));
   setText("#budget-equation", cost.equation || (cost.dailyUsd != null && data.trip?.travelers && data.trip?.durationDays ? `US$${formatNumber(cost.dailyUsd, 2)} × ${data.trip.travelers} travelers × ${data.trip.durationDays} days` : "Based on available cost research"), "");
   setText("#exchange-rate", cost.exchangeRate ? `1 USD = ${formatNumber(cost.exchangeRate, 2)} ${cost.currency || "BDT"}` : "");
-  const budgetScope = data.trip?.budgetScope ? `${formatStyle(data.trip.budgetScope)}: ` : "Budget ";
-  setText("#budget-limit", cost.budget != null ? `${budgetScope}${formatNumber(cost.budget)} ${cost.currency || ""}`.trim() : (data.trip?.budget ? `${budgetScope}${formatNumber(data.trip.budget)} ${data.trip.budgetCurrency || ""}`.trim() : "Budget not provided"));
+  const budgetScope = data.trip?.budgetScope
+    ? `${formatStyle(data.trip.budgetScope)}: `
+    : "Budget ";
+
+  const budgetCurrency =
+    cost.budgetCurrency ||
+    data.trip?.budgetCurrency ||
+    cost.currency ||
+    "";
+
+  setText(
+    "#budget-limit",
+    cost.budget != null
+      ? `${budgetScope}${formatNumber(cost.budget)} ${budgetCurrency}`.trim()
+      : (
+          data.trip?.budget != null
+            ? `${budgetScope}${formatNumber(data.trip.budget)} ${data.trip.budgetCurrency || ""}`.trim()
+            : "Budget not provided"
+        )
+  );
   const difference = cost.difference;
   const differenceElement = document.querySelector("#budget-difference");
   differenceElement.classList.toggle("is-over", Number.isFinite(difference) && difference > 0);
   differenceElement.textContent = Number.isFinite(difference)
-    ? `${difference > 0 ? "+" : ""}${formatNumber(Math.abs(difference))} ${cost.currency || ""} ${difference > 0 ? "over" : "under"}`.trim()
+    ? `${difference > 0 ? "+" : ""}${formatNumber(Math.abs(difference))} ${cost.differenceCurrency || cost.currency || ""} ${difference > 0 ? "over" : "under"}`.trim()
     : "";
   const track = document.querySelector("#budget-track");
   const trackFill = track.querySelector("span");
