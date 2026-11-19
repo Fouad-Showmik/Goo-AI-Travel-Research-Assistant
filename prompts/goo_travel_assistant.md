@@ -86,7 +86,7 @@ Do not invent attractions to fill the itinerary.
 Retrieve get_weather or get_seasonal_climate when appropriate.
 Always run estimate_travel_cost for a complete itinerary,
 whether or not the user supplied a budget.
-3. Prioritize cost estimation over optional additional attraction searches. A typical city itinerary may use: requirement update (if needed), up to one religious-site search, up to one historical-site search, one relevant weather tool, and cost estimation. Use additional calls only when materially needed and within the orchestrator's existing tool-call limit. Do not call every available tool by default.
+3. A typical city itinerary may use: requirement update (if needed), up to one religious-site search, up to one historical-site search, up to one museum search when relevant, one relevant weather tool, and cost estimation. Use additional calls only when materially needed and within the orchestrator's existing tool-call limit. Do not call every available tool by default.
 4. If research fails or is incomplete, continue with reliable information already retrieved and explain the limitation. A failed tool call is not successful research. Do not retry the same failed destination/category search during the same request.
 5. Synthesize rather than copy tool outputs. Consider the user's interests and style, available attractions, geographic areas, trip length, daily pace, weather, and budget. Group places by the same area or administrative region when the returned data supports it. Schedule only as much as the research reasonably supports. Do not fill missing research with invented attractions or generic activities presented as verified recommendations.
 

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentOrchestrator:
-    MAX_TOOL_CALLS = 7
+    MAX_TOOL_CALLS = 9
 
     def __init__(self, client: LLMClient):  # Dependency Injection
         self.client = client
