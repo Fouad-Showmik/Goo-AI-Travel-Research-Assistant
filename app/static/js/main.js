@@ -269,12 +269,12 @@ function parseCost(text, trip) {
     /starting price[^.]*\./i
   );
 
-  const excludedNote = plain.match(
-    /\b(?:excluded|excludes)\b[^.]*/i
+   const excludedNote = plain.match(
+    /[^.]*\b(?:excluded|excludes)\b[^.]*\.?/i
   );
 
   if (startingNote) notes.push(startingNote[0]);
-  if (excludedNote) notes.push(excludedNote[0]);
+  if (excludedNote) notes.push(excludedNote[0].trim());
 
   return {
     ...(dailyUsd != null ? { dailyUsd } : {}),
