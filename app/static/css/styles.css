@@ -1019,7 +1019,7 @@ a:focus-visible {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 4px;
   padding: 8px 9px;
   border-radius: 10px;
@@ -1605,8 +1605,116 @@ a:focus-visible {
   line-height: 1.45;
 }
 
+.sidebar-footer-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-footer-copy small {
+  color: #8eafa5;
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
 @keyframes button-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* PDF export */
+@page {
+  size: A4 landscape;
+  margin: 12mm;
+}
+
+@media print {
+  body.is-exporting-pdf {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body.is-exporting-pdf .app-shell {
+    display: block !important;
+    min-height: 0;
+  }
+
+  /* Hide navigation and chat, but retain the trip heading */
+  body.is-exporting-pdf .sidebar,
+  body.is-exporting-pdf .chat-panel> :not(.trip-header),
+  body.is-exporting-pdf .itinerary-actions,
+  body.is-exporting-pdf .dashboard-stream-status {
+    display: none !important;
+  }
+
+  body.is-exporting-pdf .chat-workspace {
+    display: block !important;
+    min-height: 0;
+  }
+
+  body.is-exporting-pdf .chat-panel {
+    display: contents !important;
+    position: static !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  body.is-exporting-pdf .trip-header {
+    display: block !important;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #dce9e4;
+  }
+
+  body.is-exporting-pdf .dashboard-panel {
+    min-width: 0;
+    padding: 0 !important;
+  }
+
+  body.is-exporting-pdf .dashboard-content {
+    display: grid !important;
+    gap: 12px;
+  }
+
+  body.is-exporting-pdf .overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  body.is-exporting-pdf .info-card,
+  body.is-exporting-pdf .itinerary-card {
+    box-shadow: none !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  body.is-exporting-pdf .itinerary-day {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Keep all three itinerary periods horizontally aligned */
+  body.is-exporting-pdf .itinerary-day summary {
+    grid-template-columns:
+      42px minmax(120px, 0.85fr) repeat(3, minmax(0, 1fr)) !important;
+    align-items: stretch;
+  }
+
+  body.is-exporting-pdf .day-activity {
+    grid-column: auto !important;
+    justify-content: flex-start !important;
+  }
+
+  body.is-exporting-pdf .dashboard-empty {
+    display: none !important;
+  }
+
+  body.is-exporting-pdf #source-summary,
+  body.is-exporting-pdf #sources-view {
+    display: none !important;
   }
 }
