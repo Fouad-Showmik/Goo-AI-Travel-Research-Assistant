@@ -1401,9 +1401,49 @@ a:focus-visible {
   }
 
   .sidebar-section-label,
-  .current-trip,
   .sidebar-footer {
     display: none;
+  }
+
+  /* Current trip: compact full-width strip under the nav */
+  .current-trip {
+    grid-column: 1 / -1;
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .current-trip .sidebar-section-label {
+    display: none;
+  }
+
+  .current-trip-card {
+    min-width: 0;
+    align-items: center;
+    padding: 9px 11px;
+  }
+
+  .current-trip-card > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .current-trip-card strong {
+    max-width: 100%;
+  }
+
+  .current-trip-card small {
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .current-trip-dot {
+    margin-top: 0;
+  }
+
+  .app-shell .mobile-footer {
+    display: flex;
   }
 
   .primary-nav {
@@ -1616,6 +1656,23 @@ a:focus-visible {
   color: #8eafa5;
   font-size: 0.61rem;
   line-height: 1.4;
+}
+.mobile-footer {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+  background: var(--green-900);
+  color: #afd0c7;
+  font-size: .74rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.mobile-footer small {
+  color: #8eafa5;
+  font-size: .68rem;
 }
 
 @keyframes button-spin {
