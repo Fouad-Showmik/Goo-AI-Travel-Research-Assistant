@@ -488,8 +488,8 @@ Open <http://127.0.0.1:8000>. Run the command from the project root (the folder 
 Settings are read from environment variables or a `.env` file in the project root. `.env` is git-ignored; never commit real keys.
 
 ```env
-# LLM provider (OpenAI-compatible Responses API)
-LLM_BASE_URL=https://api.example.com/v1
+# LLM provider
+LLM_BASE_URL=https://api.example.com/
 LLM_API_KEY=your-llm-api-key
 MODEL_NAME=your-model-name
 
